@@ -19,7 +19,9 @@ npm ci
 npm run dev
 ```
 
-## 功能（v0.7.2）
+## 功能（v0.8.0）
+
+收藏页的「应用更新」可手动检查 GitHub Release 最新正式版。有新版时显示版本号、安装包大小与更新说明，可选择下载更新或暂不更新。下载后打开 APK，按 Android 提示安装；使用相同签名覆盖升级可保留账号和收藏。检查不需要登录，网络异常时可直接查看 GitHub 版本页面。
 
 角色图片区采用圆角方形，图片从顶部居中裁切，避免全身立绘默认居中裁切后只显示躯干。
 
@@ -116,13 +118,13 @@ npm run android:release
 已有通过验证的本机安装包可跳过重新构建：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.7.2-debug.apk
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.8.0-debug.apk
 ```
 
 仅本地校验安装包、生成说明和校验文件，不发布：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.7.2-debug.apk -ValidateOnly
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.8.0-debug.apk -ValidateOnly
 ```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。

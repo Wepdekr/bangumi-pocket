@@ -29,6 +29,7 @@ import { Browser } from "@capacitor/browser";
 import { api } from "./api";
 import { syncController } from "./sync";
 import AccountPanel from "./AccountPanel";
+import UpdatePanel from "./UpdatePanel";
 import ReviewSheet from "./ReviewSheet";
 import CommentsTab from "./CommentsTab";
 import FriendsView from "./FriendsView";
@@ -882,6 +883,7 @@ function LibraryView({
         <p>你的私人片单，每一次心动都有迹可循。</p>
       </div>
       <AccountPanel state={account} />
+      <UpdatePanel />
       <div className="library-stats">
         <div>
           <strong>{all.length}</strong>

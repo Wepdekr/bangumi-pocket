@@ -1877,3 +1877,56 @@ main {
   background: #fceaf0;
   border-color: #df6b88;
 }
+.update-panel {
+  background: #fff;
+  border: 1px solid var(--border, #ebe8e4);
+  border-radius: 22px;
+  padding: 22px;
+  margin: 0 0 24px;
+}
+.update-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.update-heading h3 {
+  margin: 0 0 6px;
+}
+.update-heading p {
+  margin: 0;
+  color: var(--muted, #999);
+  font-size: 13px;
+}
+.update-heading .secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.update-found {
+  font-weight: 600;
+}
+.update-error {
+  color: #b74461;
+  line-height: 1.6;
+}
+.update-notes {
+  margin: 16px 0;
+}
+.update-notes summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.update-notes > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+  line-height: 1.7;
+  font-size: 14px;
+  margin-top: 12px;
+}
+.update-link {
+  margin-top: 16px;
+}

@@ -5,8 +5,7 @@ import { version } from "../package.json";
 
 export const RELEASES_URL =
   "https://github.com/Wepdekr/bangumi-pocket/releases/latest";
-const API_URL =
-  "https://api.github.com/repos/Wepdekr/bangumi-pocket/releases/latest";
+export const UPDATE_URL = `${RELEASES_URL}/download/update.json`;
 const REPO_URL = "https://github.com/Wepdekr/bangumi-pocket";
 export const APP_VERSION = version;
 export type Update = {
@@ -83,27 +82,39 @@ export async function checkUpdate(): Promise<Update> {
   let status: number, data: unknown;
   if (Capacitor.isNativePlatform()) {
     const result = await CapacitorHttp.get({
-      url: API_URL,
-      headers: { Accept: "application/vnd.github+json" },
+      url: UPDATE_URL,
+      headers: { Accept: "application/json" },
+      responseType: "json",
       connectTimeout: 12000,
       readTimeout: 18000,
     });
     status = result.status;
     data = result.data;
   } else {
-    const response = await fetch(API_URL, {
-      headers: { Accept: "application/vnd.github+json" },
+    // The preview proxy follows GitHub asset redirects without browser CORS restrictions.
+    const response = await fetch("/app-update/update.json", {
+      headers: { Accept: "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(18000),
     });
     status = response.status;
     if (response.ok) data = await response.json();
   }
-  if (status === 403 || status === 429)
+  if (status === 429)
     throw new Error("检查更新暂时受限，请稍后重试，或直接查看版本页面。");
-  if (status === 404) throw new Error("暂时没有可用的发布版本。");
+  if (status === 404) throw new Error("更新信息尚未就绪，请直接查看版本页面。");
+  if (status === 403)
+    throw new Error("更新服务拒绝访问（403），请检查网络或查看版本页面。");
   if (status < 200 || status >= 300)
     throw new Error(`检查更新失败（${status}），请稍后重试。`);
+  // Some native HTTP versions return download assets as text despite responseType.
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      throw new Error("更新信息格式不正确，请直接查看版本页面。");
+    }
+  }
   return parseRelease(data);
 }
 export async function openUpdateUrl(url: string) {

@@ -55,6 +55,24 @@ $checksum = "$apk.sha256"
 $notes = Join-Path $artifactDir "release-$version.md"
 $releaseNotes = $section.Groups[1].Value.Trim() + "`n`n## 下载与安装`n`n点击下方 Assets 中的 ``$assetName`` 下载 Android 安装包，不要下载 Source code。最低 Android 7.0。`n`n此 APK 使用现有开发调试签名，与此前提供的安装包保持一致，可覆盖安装。``.sha256`` 文件用于核对下载文件。`n"
 [System.IO.File]::WriteAllText($notes, $releaseNotes, [System.Text.UTF8Encoding]::new($false))
+$manifest = Join-Path $artifactDir 'update.json'
+$manifestOrigin = git remote get-url origin
+$manifestRepo = [regex]::Match($manifestOrigin, '^(?:https://github\.com/|git@github\.com:)([^/]+/[^/]+?)(?:\.git)?$')
+if ($LASTEXITCODE -ne 0 -or !$manifestRepo.Success) { throw 'GitHub origin required to generate update metadata.' }
+$manifestData = [ordered]@{
+  tag_name = "v$version"
+  draft = $false
+  prerelease = $false
+  body = $releaseNotes
+  assets = @(@{
+    name = $assetName
+    state = 'uploaded'
+    size = (Get-Item -LiteralPath $apk).Length
+    browser_download_url = "https://github.com/$($manifestRepo.Groups[1].Value)/releases/download/v$version/$assetName"
+    digest = "sha256:$hash"
+  })
+}
+[IO.File]::WriteAllText($manifest, ($manifestData | ConvertTo-Json -Depth 5), [Text.UTF8Encoding]::new($false))
 if ($ValidateOnly) { Write-Output "Validated APK $version (versionCode $versionCode), signature and SHA256: $hash"; exit 0 }
 
 $ghCommand = Get-Command gh -ErrorAction SilentlyContinue
@@ -88,7 +106,7 @@ $existing = $existingJson | ConvertFrom-Json
 if ($existing | Where-Object { $_.tagName -eq $tag }) {
   throw "Release $tag already exists. Do not replace APKs under an existing version; finish any existing draft manually or publish a new version."
 }
-& $gh release create $tag $apk $checksum --repo $repo --target $head --title "番组口袋 $version" --notes-file $notes --draft
+& $gh release create $tag $apk $checksum $manifest --repo $repo --target $head --title "番组口袋 $version" --notes-file $notes --draft
 if ($LASTEXITCODE -ne 0) { throw 'Draft creation or asset upload failed. Any created draft remains unpublished.' }
 $draftInfoJson = & $gh release view $tag --repo $repo --json databaseId
 if ($LASTEXITCODE -ne 0) { throw 'Cannot locate created draft.' }
@@ -98,6 +116,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot verify uploaded release assets.' }
 $draft = $draftJson | ConvertFrom-Json
 $uploaded = $draft.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
 $uploadedChecksum = $draft.assets | Where-Object { $_.name -eq "$assetName.sha256" } | Select-Object -First 1
+$uploadedManifest = $draft.assets | Where-Object { $_.name -eq 'update.json' } | Select-Object -First 1
+if (!$uploadedManifest -or $uploadedManifest.size -ne (Get-Item -LiteralPath $manifest).Length) { throw 'Update metadata upload failed; draft remains unpublished.' }
 if (!$uploaded -or $uploaded.size -ne (Get-Item -LiteralPath $apk).Length -or !$uploadedChecksum) {
   throw 'Release assets are incomplete; draft remains unpublished.'
 }

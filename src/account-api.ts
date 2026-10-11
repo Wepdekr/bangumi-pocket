@@ -68,7 +68,7 @@ export async function accountRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.8.0 (Android; personal unofficial client)",
+            "BangumiPocket/0.8.1 (Android; personal unofficial client)",
         },
         data: body,
         connectTimeout: 12000,

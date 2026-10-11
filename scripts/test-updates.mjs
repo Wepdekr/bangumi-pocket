@@ -34,6 +34,56 @@ const release = {
   ],
 };
 assert.equal(parseRelease(release).version, "9.0.0");
+// Exercise the Android HTTP branch, including JSON attachment responses returned as text.
+await build({
+  entryPoints: ["src/updates.ts"],
+  outfile: "artifacts/test-updates-native.mjs",
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  plugins: [
+    {
+      name: "native-transport-fixture",
+      setup(build) {
+        build.onResolve({ filter: /^@capacitor\// }, (args) => ({
+          path: args.path,
+          namespace: "fixture",
+        }));
+        build.onLoad({ filter: /.*/, namespace: "fixture" }, (args) => ({
+          contents:
+            args.path === "@capacitor/core"
+              ? "export const Capacitor = { isNativePlatform: () => true }; export const CapacitorHttp = { get: async options => { globalThis.updateNativeRequests.push(options); return globalThis.updateNativeResponse; } };"
+              : args.path === "@capacitor/app"
+                ? "export const App = { getInfo: async () => ({ version: '0.8.0' }) };"
+                : "export const Browser = { open: async () => {} };",
+        }));
+      },
+    },
+  ],
+});
+globalThis.updateNativeRequests = [];
+globalThis.updateNativeResponse = {
+  status: 200,
+  data: JSON.stringify(release),
+};
+const native = await import("../artifacts/test-updates-native.mjs");
+assert.equal(await native.installedVersion(), "0.8.0");
+assert.equal((await native.checkUpdate()).version, "9.0.0");
+assert.equal(
+  globalThis.updateNativeRequests[0].url,
+  "https://github.com/Wepdekr/bangumi-pocket/releases/latest/download/update.json",
+);
+assert.equal(
+  globalThis.updateNativeRequests[0].headers.Authorization,
+  undefined,
+);
+globalThis.updateNativeResponse = {
+  status: 200,
+  data: "<html>access denied</html>",
+};
+await assert.rejects(native.checkUpdate(), /格式不正确/);
+delete globalThis.updateNativeRequests;
+delete globalThis.updateNativeResponse;
 for (const invalid of [
   null,
   { ...release, draft: true },
@@ -75,7 +125,15 @@ try {
   let response = release,
     status = 200,
     requests = 0;
+  let apiRequests = 0;
   await page.route("https://api.github.com/**", async (route) => {
+    apiRequests++;
+    await route.fulfill({
+      status: 403,
+      json: { message: "API rate limit exceeded" },
+    });
+  });
+  await page.route("**/app-update/update.json", async (route) => {
     requests++;
     assert.equal(
       route.request().headers().authorization,
@@ -133,11 +191,28 @@ try {
   await panel.getByText("当前已是最新版本", { exact: true }).waitFor();
   status = 403;
   await panel.getByRole("button", { name: "检查更新", exact: true }).click();
+  await panel
+    .getByRole("alert")
+    .filter({ hasText: "拒绝访问（403）" })
+    .waitFor();
+  status = 429;
+  await panel.getByRole("button", { name: "检查更新", exact: true }).click();
   await panel.getByRole("alert").filter({ hasText: "暂时受限" }).waitFor();
+  status = 404;
+  await panel.getByRole("button", { name: "检查更新", exact: true }).click();
+  await panel
+    .getByRole("alert")
+    .filter({ hasText: "更新信息尚未就绪" })
+    .waitFor();
   status = 200;
   response = { ...release, assets: [] };
   await panel.getByRole("button", { name: "检查更新", exact: true }).click();
   await panel.getByRole("alert").filter({ hasText: "尚未就绪" }).waitFor();
+  assert.equal(
+    apiRequests,
+    0,
+    "Checking updates must work without any GitHub REST API request, even when that API is rate limited",
+  );
   console.log(
     "Update tests passed: numeric versions, release validation, credentials isolation, optional download, same version, rate limits and missing APK.",
   );

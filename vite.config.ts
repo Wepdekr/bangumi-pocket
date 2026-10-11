@@ -46,11 +46,26 @@ const friendsProxy: Record<string, ProxyOptions> = {
     },
   },
 };
+const updateProxy: Record<string, ProxyOptions> = {
+  "/app-update/update.json": {
+    target: "https://github.com",
+    changeOrigin: true,
+    followRedirects: true,
+    agent: developmentProxy(),
+    rewrite: () =>
+      "/Wepdekr/bangumi-pocket/releases/latest/download/update.json",
+    bypass: (request) => {
+      delete request.headers.cookie;
+      delete request.headers.authorization;
+      return undefined;
+    },
+  },
+};
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: { ...communityProxy, ...friendsProxy },
+    proxy: { ...communityProxy, ...friendsProxy, ...updateProxy },
     watch: {
       ignored: [
         "**/.toolchain/**",
@@ -60,6 +75,6 @@ export default defineConfig({
       ],
     },
   },
-  preview: { proxy: { ...communityProxy, ...friendsProxy } },
+  preview: { proxy: { ...communityProxy, ...friendsProxy, ...updateProxy } },
   build: { target: "es2020" },
 });

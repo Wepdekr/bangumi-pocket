@@ -5,5 +5,5 @@
 - 未发布的修改记入「未发布」；生成新版本 APK 时，将对应条目归入实际版本号，并核对 `package.json`、`package-lock.json` 与 Android 的 `versionName` / `versionCode`。
 - 历史版本、日期和功能归属必须有依据，不补造缺失的记录。
 - 仅修改文档不要求升级应用版本或生成 APK，但仍须更新变更日志。
-- 用户要求：每次发布新的 APK 都上传到本仓库的 GitHub Release，提供公开下载链接。完成必要验证、提交并推送源码及变更日志后，执行 `npm run android:release`；标签使用 `v版本号`，Release 说明取自对应版本日志，附件包含 APK 与 SHA256 校验文件。
+- 用户要求：每次发布新的 APK 都上传到本仓库的 GitHub Release，提供公开下载链接。完成必要验证、提交并推送源码及变更日志后，执行 `npm run android:release`；标签使用 `v版本号`，Release 说明取自对应版本日志，附件包含 APK、SHA256 校验文件与供 App 检查更新的 `update.json`。发布前核对更新信息中的版本、大小和下载地址与该 APK 一致。
 - 发布时保留已有安装包使用的签名以支持覆盖安装，不覆盖已发布版本的附件。普通构建不自动对外发布；仅在发布新版本时执行发布命令。

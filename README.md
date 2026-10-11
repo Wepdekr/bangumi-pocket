@@ -4,6 +4,15 @@
 
 各版本新增功能与 bug 修复见 [版本变更日志](CHANGELOG.md)。后续修改同步维护日志，未发布改动先记入「未发布」，打包后归入对应版本。
 
+源码仓库：[Wepdekr/bangumi-pocket](https://github.com/Wepdekr/bangumi-pocket)。
+
+```sh
+git clone https://github.com/Wepdekr/bangumi-pocket.git
+cd bangumi-pocket
+npm ci
+npm run dev
+```
+
 ## 功能（v0.7.2）
 
 角色图片区采用圆角方形，图片从顶部居中裁切，避免全身立绘默认居中裁切后只显示躯干。

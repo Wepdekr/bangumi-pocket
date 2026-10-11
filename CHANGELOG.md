@@ -6,7 +6,8 @@
 
 ### 工程
 
-- 准备 GitHub 源码仓库，初始化 Git，并排除本机环境配置、工具链、依赖缓存、构建产物与签名密钥。
+- 创建公开 GitHub 源码仓库 [Wepdekr/bangumi-pocket](https://github.com/Wepdekr/bangumi-pocket)，初始化 Git，并排除本机环境配置、工具链、依赖缓存、构建产物与签名密钥。
+- README 增加源码仓库入口与克隆、安装依赖、运行预览的说明。
 
 ### 文档
 

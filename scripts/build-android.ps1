@@ -27,4 +27,6 @@ try {
 } finally { Pop-Location }
 New-Item -ItemType Directory -Force -Path artifacts | Out-Null
 Copy-Item -LiteralPath 'android/app/build/outputs/apk/debug/app-debug.apk' -Destination 'artifacts/bangumi-pocket-debug.apk' -Force
+$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+Copy-Item -LiteralPath 'artifacts/bangumi-pocket-debug.apk' -Destination "artifacts/bangumi-pocket-$version-debug.apk" -Force
 Write-Output 'APK ready: artifacts/bangumi-pocket-debug.apk'

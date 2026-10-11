@@ -6,6 +6,12 @@
 
 源码仓库：[Wepdekr/bangumi-pocket](https://github.com/Wepdekr/bangumi-pocket)。
 
+## 下载 Android 安装包
+
+[下载最新版 APK](https://github.com/Wepdekr/bangumi-pocket/releases/latest) · [全部历史版本](https://github.com/Wepdekr/bangumi-pocket/releases)
+
+打开 Release 页面，在 **Assets** 中选择 `bangumi-pocket-版本号.apk` 下载，安装到手机即可。`Source code` 是源码压缩包。APK 最低支持 Android 7.0，当前使用与此前安装包一致的开发调试签名；同一签名的新版可以覆盖安装。
+
 ```sh
 git clone https://github.com/Wepdekr/bangumi-pocket.git
 cd bangumi-pocket
@@ -95,7 +101,29 @@ powershell -ExecutionPolicy Bypass -File scripts/setup-android.ps1
 npm run android:build
 ```
 
-输出位置：`artifacts/bangumi-pocket-debug.apk`。这是开发调试签名的安装包，适合本机试用。公开发布需配置自己的 release 签名和包名。最低 Android 7.0，建议使用更新的 Android System WebView。
+输出位置：`artifacts/bangumi-pocket-debug.apk`。当前安装包使用开发调试签名，GitHub Release 保留同一签名以支持覆盖升级。最低 Android 7.0，建议使用更新的 Android System WebView。
+
+### 发布到 GitHub Release
+
+每次发布前更新前端和 Android 版本、`CHANGELOG.md` 对应版本条目，完成必要验证，提交源码并推送到 `origin/main`。安装并登录官方 GitHub CLI 后运行：
+
+```powershell
+npm run android:release
+```
+
+该命令构建 APK，核对版本、包名和签名，生成 SHA256 校验文件，将版本日志作为 Release 说明。附件先上传至草稿，核实后再公开发布，最终输出下载链接。已发布的版本不会覆盖；修复后使用新版本号发布。保留现有签名密钥，不要随意更换，以保证用户可以覆盖升级。
+
+已有通过验证的本机安装包可跳过重新构建：
+
+```powershell
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.7.2-debug.apk
+```
+
+仅本地校验安装包、生成说明和校验文件，不发布：
+
+```powershell
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.7.2-debug.apk -ValidateOnly
+```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。
 

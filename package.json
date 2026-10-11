@@ -11,7 +11,8 @@
     "android:build": "powershell -ExecutionPolicy Bypass -File scripts/build-android.ps1",
     "test": "node scripts/test-ui.mjs",
     "test:sync": "node scripts/test-sync.mjs",
-    "test:text": "node scripts/test-text.mjs"
+    "test:text": "node scripts/test-text.mjs",
+    "android:release": "powershell -ExecutionPolicy Bypass -File scripts/release-android.ps1"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",

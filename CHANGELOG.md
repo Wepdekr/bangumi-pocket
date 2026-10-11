@@ -6,6 +6,9 @@
 
 ### 工程
 
+- 建立 GitHub Release 发布流程：自动构建、核对版本与 APK 签名、生成 SHA256 文件、提取该版本变更日志，先上传附件到草稿，核实后公开发布。
+- README 增加最新 APK 下载入口；后续每次发布新 APK 同步上传 Release。
+
 - 创建公开 GitHub 源码仓库 [Wepdekr/bangumi-pocket](https://github.com/Wepdekr/bangumi-pocket)，初始化 Git，并排除本机环境配置、工具链、依赖缓存、构建产物与签名密钥。
 - README 增加源码仓库入口与克隆、安装依赖、运行预览的说明。
 

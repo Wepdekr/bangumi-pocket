@@ -46,7 +46,10 @@ New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 $assetName = "bangumi-pocket-$version.apk"
 $apk = Join-Path $artifactDir $assetName
 if ($apkSource -ne $apk) { Copy-Item -LiteralPath $apkSource -Destination $apk -Force }
-$hash = (Get-FileHash -LiteralPath $apk -Algorithm SHA256).Hash.ToLower()
+$sha256 = [Security.Cryptography.SHA256]::Create()
+$apkStream = [IO.File]::OpenRead($apk)
+try { $hash = [BitConverter]::ToString($sha256.ComputeHash($apkStream)).Replace('-', '').ToLower() }
+finally { $apkStream.Dispose(); $sha256.Dispose() }
 $checksum = "$apk.sha256"
 [System.IO.File]::WriteAllText($checksum, "$hash  $assetName`n", [System.Text.Encoding]::ASCII)
 $notes = Join-Path $artifactDir "release-$version.md"

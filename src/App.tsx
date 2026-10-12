@@ -30,6 +30,7 @@ import { api } from "./api";
 import { syncController } from "./sync";
 import AccountPanel from "./AccountPanel";
 import UpdatePanel from "./UpdatePanel";
+import { airStatus, episodeToggleStyle, localDate } from "./air-progress";
 import ReviewSheet from "./ReviewSheet";
 import CommentsTab from "./CommentsTab";
 import FriendsView from "./FriendsView";
@@ -1002,6 +1003,16 @@ function Detail({
   const [epBusy, setEpBusy] = useState(false);
   const [epError, setEpError] = useState(false);
   const [throughError, setThroughError] = useState("");
+  const [airToday, setAirToday] = useState(localDate());
+  useEffect(() => {
+    const refresh = () => setAirToday(localDate());
+    const timer = window.setInterval(refresh, 60000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1332,9 +1343,8 @@ function Detail({
                                   !ready || saving || epBusy || !progressReady
                                 }
                                 aria-label={`${saved?.watched.includes(e.id) ? "取消标记" : "标记看过"}第${e.sort}话`}
-                                className={
-                                  saved?.watched.includes(e.id) ? "checked" : ""
-                                }
+                                className={`episode-toggle ${episodeToggleStyle(e, Boolean(saved?.watched.includes(e.id)), s.type, airToday)}`}
+                                title={`${airStatus(e, airToday)} · ${saved?.watched.includes(e.id) ? "已看" : "未看"}`}
                                 onClick={() =>
                                   change(
                                     !saved || saved.status === "wish"

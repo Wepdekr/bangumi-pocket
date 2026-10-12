@@ -1548,6 +1548,11 @@ main {
   margin-top: 20px;
 }
 .characters button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: start;
   text-align: center;
   padding: 0;
   min-width: 0;
@@ -1562,16 +1567,23 @@ main {
   background: #e7e3de;
 }
 .characters h3 {
+  min-height: 36px;
+  line-height: 18px;
   font-size: 12px;
   margin-top: 8px;
   overflow-wrap: anywhere;
 }
 .characters p {
+  min-height: 16px;
   font-size: 10px;
   color: var(--pink);
   margin: 6px 0;
 }
 .characters small {
+  display: block;
+  width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
   font-size: 9px;
   color: #a4949e;
 }
@@ -1929,4 +1941,9 @@ main {
 }
 .update-link {
   margin-top: 16px;
+}
+.episode .episode-toggle.available {
+  border-color: var(--pink);
+  color: var(--pink);
+  background: transparent;
 }

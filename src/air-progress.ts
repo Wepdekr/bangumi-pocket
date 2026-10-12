@@ -19,12 +19,12 @@ export function airStatus(episode: Episode, today = localDate()) {
 export function episodeToggleStyle(
   episode: Episode,
   watched: boolean,
-  type?: number,
+  _type?: number,
   today = localDate(),
 ) {
   if (watched) return "checked";
   const status = airStatus(episode, today);
-  return type === 2 && (status === "已放送" || status === "今天放送")
+  return status === "已放送" || status === "今天放送"
     ? "available"
     : "upcoming";
 }

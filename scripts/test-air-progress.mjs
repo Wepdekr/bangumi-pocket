@@ -64,6 +64,24 @@ assert.equal(
   "upcoming",
 );
 const offsets = [];
+for (const type of [1, 2, 3, 4, 6]) {
+  assert.equal(
+    episodeToggleStyle(episodes[0], false, type, "2026-10-12"),
+    "available",
+  );
+  assert.equal(
+    episodeToggleStyle(episodes[2], false, type, "2026-10-12"),
+    "upcoming",
+  );
+  assert.equal(
+    episodeToggleStyle(episodes[3], false, type, "2026-10-12"),
+    "upcoming",
+  );
+  assert.equal(
+    episodeToggleStyle(episodes[2], true, type, "2026-10-12"),
+    "checked",
+  );
+}
 assert.equal(
   (
     await completeAirEpisodes(
@@ -115,6 +133,7 @@ try {
     }),
   );
   let chapterData = episodes;
+  let subjectType = 2;
   await page.route("https://api.bgm.tv/**", (route) => {
     const url = new URL(route.request().url());
     let data = browse;
@@ -123,7 +142,8 @@ try {
     else if (url.pathname === "/v0/episodes") {
       const offset = Number(url.searchParams.get("offset") || 0);
       data = { data: chapterData.slice(offset, offset + 2), total: 5 };
-    } else if (url.pathname === `/v0/subjects/${subject.id}`) data = subject;
+    } else if (url.pathname === `/v0/subjects/${subject.id}`)
+      data = { ...subject, type: subjectType };
     return route.fulfill({ json: data });
   });
   await page.goto("http://localhost:5173");
@@ -135,6 +155,18 @@ try {
   await page.locator(".episode-toggle.available").first().waitFor();
   assert.equal(await page.locator(".air-progress").count(), 0);
   assert.equal(await page.locator(".episode-toggle.available").count(), 2);
+  subjectType = 6;
+  await page.reload();
+  await page.locator(".detail").waitFor();
+  await page
+    .locator(".detail-tabs")
+    .getByRole("button", { name: "章节", exact: true })
+    .click();
+  await page.locator(".episode-toggle.available").first().waitFor();
+  assert.equal(await page.locator(".episode-toggle.available").count(), 2);
+  await page.getByRole("button", { name: "加载更多章节", exact: true }).click();
+  await page.locator(".episode-toggle.upcoming").first().waitFor();
+  assert.equal(await page.locator(".episode-toggle.upcoming").count(), 2);
   chapterData = episodes.map((e) => ({ ...e, airdate: "2025-01-01" }));
   await page.reload();
   await page.locator(".detail").waitFor();

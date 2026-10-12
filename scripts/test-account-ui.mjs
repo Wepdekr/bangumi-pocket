@@ -273,6 +273,10 @@ try {
   expired = false;
   await page.getByRole("button", { name: "退出", exact: true }).click();
   await page.getByRole("button", { name: "连接并同步", exact: true }).waitFor();
+  await page
+    .locator("main .chips")
+    .getByRole("button", { name: "全部", exact: true })
+    .click();
   assert.match(
     await page.locator(".subject-row h3").innerText(),
     new RegExp(guest.name_cn || guest.name),

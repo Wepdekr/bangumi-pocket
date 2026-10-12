@@ -171,6 +171,10 @@ try {
     .locator(".bottom-nav")
     .getByRole("button", { name: "收藏", exact: true })
     .click();
+  await page
+    .locator("main .chips")
+    .getByRole("button", { name: "全部", exact: true })
+    .click();
   assert.equal(
     await page.locator(".subject-row h3").innerText(),
     "苍蓝传承 威尔什&榭达",

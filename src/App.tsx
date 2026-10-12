@@ -693,7 +693,7 @@ function SubjectRow({
         </p>
         {saved && (
           <small className="pink">
-            {statusName(saved.status, s.type)} · 已收藏
+            {statusName(saved.status, s.type)}
           </small>
         )}
       </div>
@@ -875,7 +875,7 @@ function LibraryView({
   ready: boolean;
   account: SyncState;
 }) {
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("doing");
   const all = Object.values(library).sort((a, b) => b.updated - a.updated);
   const items = all.filter((s) => filter === "all" || s.status === filter);
   return (

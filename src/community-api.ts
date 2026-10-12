@@ -37,7 +37,7 @@ export async function communityPage(
       method: "GET",
       headers: {
         "User-Agent":
-          "BangumiPocket/0.9.0 (Android; personal unofficial client)",
+          "BangumiPocket/0.9.1 (Android; personal unofficial client)",
       },
       connectTimeout: 12000,
       readTimeout: 18000,

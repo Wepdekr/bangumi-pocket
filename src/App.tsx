@@ -264,6 +264,10 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     const listener = NativeApp.addListener("backButton", () => {
+      if (document.querySelector(".update-dialog")) {
+        document.dispatchEvent(new Event("bangumi-update-back"));
+        return;
+      }
       if (document.querySelector(".review-sheet, .collection-picker")) {
         document.dispatchEvent(new Event("bangumi-review-back"));
         return;

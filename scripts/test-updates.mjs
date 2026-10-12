@@ -155,8 +155,15 @@ try {
   await panel.waitFor();
   assert.equal(requests, 0, "Checks should only happen when requested");
   await panel.getByRole("button", { name: "检查更新", exact: true }).click();
-  await panel.getByText("发现新版本 9.0.0", { exact: false }).waitFor();
-  assert.equal(await panel.locator("script").count(), 0);
+  const dialog = page.getByRole("dialog", { name: "发现新版本 9.0.0" });
+  await dialog.waitFor();
+  assert.equal(
+    await dialog.getByRole("heading", { name: "新增", exact: true }).count(),
+    1,
+  );
+  assert.equal(await dialog.locator("script").count(), 0);
+  assert.equal(await page.locator("#root").evaluate((el) => el.inert), true);
+  assert.equal(await dialog.locator("script").count(), 0);
   await page.screenshot({
     path: "artifacts/mobile-app-update.png",
     fullPage: true,
@@ -169,9 +176,21 @@ try {
       return null;
     };
   });
-  await panel.getByRole("button", { name: "下载更新" }).click();
+  await dialog.getByRole("button", { name: "下载更新" }).click();
   assert.equal(opened[0], release.assets[0].browser_download_url);
-  await panel.getByRole("button", { name: "暂不更新" }).click();
+  await dialog.getByRole("button", { name: "暂不更新" }).click();
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  assert.equal(await page.locator("#root").evaluate((el) => el.inert), false);
+  await panel.getByRole("button", { name: "查看更新说明" }).click();
+  await dialog.waitFor();
+  await page.evaluate(() =>
+    document.dispatchEvent(new Event("bangumi-update-back")),
+  );
+  assert.equal(await page.getByRole("dialog").count(), 0);
+  await panel.getByRole("button", { name: "查看更新说明" }).click();
+  await dialog.waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByRole("dialog").count(), 0);
   assert.equal(
     await panel.getByRole("button", { name: "下载更新" }).count(),
     0,

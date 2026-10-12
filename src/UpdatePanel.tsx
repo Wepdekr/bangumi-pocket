@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
+import { useCallback, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import UpdateDialog from "./UpdateDialog";
 import {
   APP_VERSION,
   RELEASES_URL,
@@ -16,18 +17,23 @@ export default function UpdatePanel() {
   const [update, setUpdate] = useState<Update>();
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const closeDialog = useCallback(() => setDialogOpen(false), []);
   async function check() {
     if (busy) return;
     setBusy(true);
     setError("");
     setMessage("");
     setUpdate(undefined);
+    setDialogOpen(false);
     try {
       const current = await installedVersion();
       setCurrent(current);
       const latest = await checkUpdate();
-      if (isNewer(latest.version, current)) setUpdate(latest);
-      else setMessage("当前已是最新版本");
+      if (isNewer(latest.version, current)) {
+        setUpdate(latest);
+        setDialogOpen(true);
+      } else setMessage("当前已是最新版本");
     } catch (e) {
       setError(
         e instanceof Error && !/fetch|network|timeout|abort/i.test(e.message)
@@ -72,28 +78,24 @@ export default function UpdatePanel() {
         </p>
       )}
       {update && (
-        <>
-          <details className="update-notes" open>
-            <summary>更新说明</summary>
-            <div>{update.notes || "此版本暂无更新说明。"}</div>
-          </details>
-          <p className="account-hint">
-            下载 APK
-            后打开文件，按手机提示安装即可升级，收藏和账号会保留。若手机询问安装权限，请允许用于下载的浏览器安装此应用。
-          </p>
-          <div className="account-actions">
-            <button className="primary" onClick={() => open(update.apk)}>
-              <Download size={16} />
-              下载更新
-            </button>
-            <button
-              className="text-button"
-              onClick={() => setUpdate(undefined)}
-            >
-              暂不更新
-            </button>
-          </div>
-        </>
+        <button
+          className="secondary"
+          onClick={() => {
+            setError("");
+            setDialogOpen(true);
+          }}
+        >
+          查看更新说明
+        </button>
+      )}
+      {update && dialogOpen && (
+        <UpdateDialog
+          update={update}
+          error={error}
+          close={closeDialog}
+          download={() => void open(update.apk)}
+          openPage={() => void open(update.page)}
+        />
       )}
       <button
         className="text-button update-link"

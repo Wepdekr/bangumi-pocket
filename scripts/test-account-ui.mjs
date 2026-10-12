@@ -132,6 +132,9 @@ await page.route("https://api.bgm.tv/**", async (route) => {
   return route.abort();
 });
 try {
+  await page.route("**/community-api/subjects/*/characters", (route) =>
+    route.fulfill({ status: 404, json: {} }),
+  );
   await page.goto("http://localhost:5173");
   await page
     .locator(".bottom-nav")

@@ -146,6 +146,9 @@ try {
       data = { ...subject, type: subjectType };
     return route.fulfill({ json: data });
   });
+  await page.route("**/community-api/subjects/*/characters", (route) =>
+    route.fulfill({ status: 404, json: {} }),
+  );
   await page.goto("http://localhost:5173");
   await page.locator(".hero").click();
   await page

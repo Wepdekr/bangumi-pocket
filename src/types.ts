@@ -32,10 +32,13 @@ export type Episode = {
 export type Character = {
   id: number;
   name: string;
-  role: string;
+  role?: string;
+  relation?: string;
+  order?: number;
   images?: { medium: string };
   actors?: { id: number; name: string }[];
 };
+export type RelatedSubject = Subject & { relation: string; order?: number };
 export type CalendarDay = {
   weekday: { id: number; cn: string; en: string };
   items: Subject[];

@@ -121,6 +121,9 @@ await page.route("**/community-api/**", (route) =>
   }),
 );
 try {
+  await page.route("**/community-api/subjects/*/characters", (route) =>
+    route.fulfill({ status: 404, json: {} }),
+  );
   await page.goto("http://localhost:5173");
   await page
     .getByRole("heading", { name: "苍蓝传承 威尔什&榭达", exact: true })

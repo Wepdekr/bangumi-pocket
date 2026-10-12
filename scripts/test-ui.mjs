@@ -66,6 +66,9 @@ await page.route("https://lain.bgm.tv/**", (route) =>
 );
 await fs.mkdir("artifacts", { recursive: true });
 try {
+  await page.route("**/community-api/subjects/*/characters", (route) =>
+    route.fulfill({ status: 404, json: {} }),
+  );
   await page.goto("http://localhost:5173");
   await page.locator(".hero h2").waitFor();
   await page.screenshot({ path: "artifacts/mobile-home.png" });

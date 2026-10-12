@@ -19,7 +19,9 @@ npm ci
 npm run dev
 ```
 
-## 功能（v0.9.2）
+## 功能（v0.10.0）
+
+详情标签栏滚动吸顶，角色与声优排列更紧凑，并按条目顺序展示。新增「关联」页签，优先展示前传、续集等主线关系，点击作品在 App 内打开详情，返回时回到上一部作品。
 
 收藏页默认显示「在看」，方便继续观看；列表直接显示实际收藏状态，去掉重复的收藏提示。
 
@@ -122,13 +124,13 @@ npm run android:release
 已有通过验证的本机安装包可跳过重新构建：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.9.2-debug.apk
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.0-debug.apk
 ```
 
 仅本地校验安装包、生成说明和校验文件，不发布：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.9.2-debug.apk -ValidateOnly
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.0-debug.apk -ValidateOnly
 ```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。

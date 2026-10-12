@@ -35,6 +35,11 @@ await page.route("**/community-api/**", (route) => {
   const url = new URL(route.request().url());
   assert.equal(route.request().headers().authorization, undefined);
   assert.equal(route.request().headers().cookie, undefined);
+  if (
+    url.pathname.endsWith("/characters") ||
+    url.pathname.endsWith("/relations")
+  )
+    return route.fulfill({ json: { data: [], total: 0 } });
   calls.push(url.pathname);
   if (fail) return route.fulfill({ status: 503, json: {} });
   if (empty) return route.fulfill({ json: { total: 0, data: [] } });
@@ -113,14 +118,12 @@ try {
   await page.screenshot({ path: "artifacts/mobile-comments.png" });
   await page.getByRole("button", { name: "长评", exact: true }).click();
   await page.getByText("一篇长评", { exact: true }).waitFor();
-  await page
-    .context()
-    .route("https://bgm.tv/blog/**", (route) =>
-      route.fulfill({
-        contentType: "text/html",
-        body: "<title>Test review</title>",
-      }),
-    );
+  await page.context().route("https://bgm.tv/blog/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<title>Test review</title>",
+    }),
+  );
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: /阅读全文/ }).click();
   const popup = await popupPromise;

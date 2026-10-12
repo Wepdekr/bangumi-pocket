@@ -33,6 +33,7 @@ import UpdatePanel from "./UpdatePanel";
 import { airStatus, episodeToggleStyle, localDate } from "./air-progress";
 import ReviewSheet from "./ReviewSheet";
 import CommentsTab from "./CommentsTab";
+import RelationsTab from "./RelationsTab";
 import FriendsView from "./FriendsView";
 import { watchedThrough } from "./episode-progress";
 import { imageUrl } from "./images";
@@ -526,8 +527,10 @@ export default function App() {
       </nav>
       {selected && (
         <Detail
+          key={selected}
           id={selected}
           close={close}
+          openSubject={open}
           saved={library[selected]}
           save={save}
           ready={ready && !account.busy}
@@ -692,9 +695,7 @@ function SubjectRow({
           <span>{s.date || s.air_date || "日期待定"}</span>
         </p>
         {saved && (
-          <small className="pink">
-            {statusName(saved.status, s.type)}
-          </small>
+          <small className="pink">{statusName(saved.status, s.type)}</small>
         )}
       </div>
       <ChevronRight size={18} />
@@ -967,6 +968,7 @@ function LibraryView({
 function Detail({
   id,
   close,
+  openSubject,
   saved,
   save,
   ready,
@@ -978,6 +980,7 @@ function Detail({
 }: {
   id: number;
   close: () => void;
+  openSubject: (subject: Subject) => void;
   saved?: Saved;
   save: (
     s: Subject,
@@ -1208,6 +1211,7 @@ function Detail({
                     { id: "episodes", name: "章节" },
                     { id: "characters", name: "角色" },
                     { id: "comments", name: "评论" },
+                    { id: "relations", name: "关联" },
                   ].map((t) => (
                     <button
                       key={t.id}
@@ -1415,7 +1419,6 @@ function Detail({
                               loading="lazy"
                             />
                             <h3>{displayText(c.name)}</h3>
-                            <p>{displayText(c.role)}</p>
                             <small>
                               {c.actors
                                 ?.map((a) => displayText(a.name))
@@ -1426,6 +1429,9 @@ function Detail({
                       </div>
                     )}
                   </>
+                )}
+                {tab === "relations" && (
+                  <RelationsTab id={id} open={openSubject} />
                 )}
                 <div className="collection-options">
                   <h2>我的收藏</h2>

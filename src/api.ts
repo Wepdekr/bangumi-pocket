@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
+import { subjectCharacters, subjectRelations } from "./detail-api";
 import type {
   Subject,
   Page,
@@ -8,6 +9,7 @@ import type {
   Character,
   Saved,
   Session,
+  RelatedSubject,
 } from "./types";
 const BASE = "https://api.bgm.tv";
 const CACHE_TTL = 15 * 60 * 1000;
@@ -27,7 +29,7 @@ export async function request<T>(path: string, body?: unknown): Promise<T> {
         headers: {
           "Content-Type": "application/json",
           "User-Agent":
-            "BangumiPocket/0.9.2 (Android; personal unofficial client)",
+            "BangumiPocket/0.10.0 (Android; personal unofficial client)",
           ...(access ? { Authorization: `Bearer ${access.token}` } : {}),
         },
         data: body,
@@ -86,7 +88,13 @@ export const api = {
       `/v0/episodes?subject_id=${id}&type=0&limit=100&offset=${offset}`,
     ),
   characters: (id: number) =>
-    request<Character[]>(`/v0/subjects/${id}/characters`),
+    subjectCharacters(id, () =>
+      request<Character[]>(`/v0/subjects/${id}/characters`),
+    ),
+  relations: (id: number) =>
+    subjectRelations(id, () =>
+      request<RelatedSubject[]>(`/v0/subjects/${id}/subjects`),
+    ),
 };
 export async function readLibrary(): Promise<Record<number, Saved>> {
   const { value } = await Preferences.get({ key: "library-v1" });

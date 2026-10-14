@@ -70,8 +70,14 @@ export default function UpdateDialog({
   downloadState,
   actionBusy,
   cancelDownload,
+  required = false,
+  retryCheck,
+  checking = false,
 }: {
   update: Update;
+  required?: boolean;
+  retryCheck?: () => void;
+  checking?: boolean;
   error: string;
   close: () => void;
   download: () => void;
@@ -83,6 +89,9 @@ export default function UpdateDialog({
   const downloading =
     downloadState?.phase === "downloading" ||
     downloadState?.phase === "verifying";
+  const dismiss = () => {
+    if (!required) close();
+  };
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -96,7 +105,7 @@ export default function UpdateDialog({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        close();
+        if (!required) close();
       }
       if (event.key !== "Tab") return;
       const controls = Array.from(
@@ -121,21 +130,24 @@ export default function UpdateDialog({
         first?.focus();
       }
     };
-    document.addEventListener("keydown", keydown, true);
-    document.addEventListener("bangumi-update-back", close);
+    window.addEventListener("keydown", keydown, true);
+    const back = () => {
+      if (!required) close();
+    };
+    document.addEventListener("bangumi-update-back", back);
     return () => {
-      document.removeEventListener("keydown", keydown, true);
-      document.removeEventListener("bangumi-update-back", close);
+      window.removeEventListener("keydown", keydown, true);
+      document.removeEventListener("bangumi-update-back", back);
       if (root) root.inert = wasInert ?? false;
       document.body.style.overflow = overflow;
       previous?.focus();
     };
-  }, [close]);
+  }, [close, required]);
   return createPortal(
     <div
       className="update-overlay"
       onClick={(e) => {
-        if (e.target === e.currentTarget) close();
+        if (e.target === e.currentTarget) dismiss();
       }}
     >
       <div
@@ -151,31 +163,51 @@ export default function UpdateDialog({
             <h2 id="update-dialog-title">发现新版本 {update.version}</h2>
             <p>{(update.size / 1024 / 1024).toFixed(1)} MB · 更新说明</p>
           </div>
-          <button
-            className="icon-button"
-            aria-label="关闭更新说明"
-            onClick={close}
-          >
-            <X size={20} />
-          </button>
+          {!required && (
+            <button
+              className="icon-button"
+              aria-label="关闭更新说明"
+              onClick={close}
+            >
+              <X size={20} />
+            </button>
+          )}
         </header>
         <div className="update-dialog-body">
           <ReleaseNotes text={update.notes} />
-          <p className="account-hint">下载后打开安装包，按手机提示升级即可。</p>
+          {required && (
+            <p className="update-required">此版本需要更新后才能继续使用。</p>
+          )}
+          <p className="account-hint">
+            {directUpdates()
+              ? "下载完成后会打开系统安装界面，按提示确认即可。"
+              : "下载后打开安装包，按手机提示升级即可。"}
+          </p>
           <UpdateDownloadProgress state={downloadState} />
           {error && (
             <p className="update-error" role="alert">
               {error}
             </p>
           )}
+          {required && retryCheck && (
+            <button
+              className="secondary"
+              disabled={checking || actionBusy || downloading}
+              onClick={retryCheck}
+            >
+              {checking ? "正在检查…" : "重新检查更新"}
+            </button>
+          )}
           <button className="text-button" onClick={openPage}>
             查看 GitHub 版本页面
           </button>
         </div>
         <footer>
-          <button className="text-button" onClick={close}>
-            {downloading ? "后台下载" : "暂不更新"}
-          </button>
+          {!required && (
+            <button className="text-button" onClick={dismiss}>
+              {downloading ? "后台下载" : "暂不更新"}
+            </button>
+          )}
           {downloading ? (
             <button
               className="secondary"

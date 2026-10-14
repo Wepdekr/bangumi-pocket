@@ -11,30 +11,42 @@ await build({
   platform: "node",
   format: "esm",
 });
-const { isNewer, parseRelease, APP_VERSION } =
+const { isNewer, updateLevel, parseRelease, APP_VERSION } =
   await import("../artifacts/test-updates.mjs");
 assert.equal(isNewer("0.10.0", "0.9.9"), true);
+for (const [latest, current, level] of [
+  ["0.10.2", "0.10.2", "none"],
+  ["0.10.3", "0.10.2", "patch"],
+  ["0.11.0", "0.10.9", "minor"],
+  ["1.0.0", "0.99.99", "major"],
+  ["2.0.0", "1.99.99", "major"],
+  ["1.9.0", "1.10.0", "none"],
+  ["0.99.99", "1.0.0", "none"],
+  ["v1.2.4", "1.2.3", "patch"],
+])
+  assert.equal(updateLevel(latest, current), level);
+assert.throws(() => updateLevel("999999999999999999999.0.0", "1.0.0"));
 assert.equal(isNewer("v1.0.0", "0.99.9"), true);
 assert.equal(isNewer(APP_VERSION, APP_VERSION), false);
 assert.equal(isNewer("0.7.2", APP_VERSION), false);
 assert.throws(() => isNewer("1.0.0-beta", APP_VERSION));
 const release = {
-  tag_name: "v9.0.0",
+  tag_name: "v0.99.0",
   draft: false,
   prerelease: false,
   body: "### 新增\n- 检查更新\n<script>unsafe</script>",
   assets: [
     {
-      name: "bangumi-pocket-9.0.0.apk",
+      name: "bangumi-pocket-0.99.0.apk",
       state: "uploaded",
       size: 4377840,
       digest: `sha256:${"a".repeat(64)}`,
       browser_download_url:
-        "https://github.com/Wepdekr/bangumi-pocket/releases/download/v9.0.0/bangumi-pocket-9.0.0.apk",
+        "https://github.com/Wepdekr/bangumi-pocket/releases/download/v0.99.0/bangumi-pocket-0.99.0.apk",
     },
   ],
 };
-assert.equal(parseRelease(release).version, "9.0.0");
+assert.equal(parseRelease(release).version, "0.99.0");
 assert.equal(parseRelease(release).sha256, "a".repeat(64));
 assert.equal(
   parseRelease({
@@ -86,7 +98,7 @@ globalThis.updateNativeResponse = {
 };
 const native = await import("../artifacts/test-updates-native.mjs");
 assert.equal(await native.installedVersion(), "0.8.0");
-assert.equal((await native.checkUpdate()).version, "9.0.0");
+assert.equal((await native.checkUpdate()).version, "0.99.0");
 assert.equal(
   globalThis.updateNativeRequests[0].url,
   "https://github.com/Wepdekr/bangumi-pocket/releases/latest/download/update.json",
@@ -173,7 +185,7 @@ try {
   await panel.waitFor();
   assert.equal(requests, 0, "Checks should only happen when requested");
   await panel.getByRole("button", { name: "检查更新", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "发现新版本 9.0.0" });
+  const dialog = page.getByRole("dialog", { name: "发现新版本 0.99.0" });
   await dialog.waitFor();
   assert.equal(
     await dialog.getByRole("heading", { name: "新增", exact: true }).count(),

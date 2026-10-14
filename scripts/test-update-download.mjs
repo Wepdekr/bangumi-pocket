@@ -6,7 +6,7 @@ await fs.mkdir("artifacts", { recursive: true });
 await build({
   stdin: {
     contents:
-      'import React from "react"; import {createRoot} from "react-dom/client"; import UpdatePanel from "./src/UpdatePanel"; createRoot(document.getElementById("root")).render(<UpdatePanel/>);',
+      'import React from "react"; import {createRoot} from "react-dom/client"; import UpdatePanel from "./src/UpdatePanel"; import {UpdateProvider} from "./src/UpdateManager"; createRoot(document.getElementById("root")).render(<UpdateProvider startup={false}><UpdatePanel/></UpdateProvider>);',
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -27,7 +27,9 @@ await build({
               ? 'export const Capacitor = {isNativePlatform:()=>true,getPlatform:()=>"android"}; export const CapacitorHttp = {get: async()=>({status:200,data:window.release})}; export const registerPlugin = () => window.updater;'
               : args.path === "@capacitor/app"
                 ? 'export const App = {getInfo:async()=>({version:"0.10.0"})};'
-                : "export const Browser = {open:async options=>window.browserLinks.push(options.url)};",
+                : args.path === "@capacitor/preferences"
+                  ? "export const Preferences = {get:async()=>({value:null}),set:async()=>{},remove:async()=>{}};"
+                  : "export const Browser = {open:async options=>window.browserLinks.push(options.url)};",
         }));
       },
     },
@@ -47,18 +49,18 @@ try {
     window.browserLinks = [];
     window.nativeCalls = [];
     window.release = {
-      tag_name: "v9.0.0",
+      tag_name: "v0.99.0",
       draft: false,
       prerelease: false,
       body: "### 改进\n- 更新体验",
       assets: [
         {
-          name: "bangumi-pocket-9.0.0.apk",
+          name: "bangumi-pocket-0.99.0.apk",
           state: "uploaded",
           size: 4000000,
           digest: "sha256:" + "a".repeat(64),
           browser_download_url:
-            "https://github.com/Wepdekr/bangumi-pocket/releases/download/v9.0.0/bangumi-pocket-9.0.0.apk",
+            "https://github.com/Wepdekr/bangumi-pocket/releases/download/v0.99.0/bangumi-pocket-0.99.0.apk",
         },
       ],
     };
@@ -100,7 +102,7 @@ try {
   await page.getByRole("button", { name: "检查更新", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "下载更新", exact: true }).click();
-  await dialog.getByText("9.0.0 · 正在下载 50%", { exact: true }).waitFor();
+  await dialog.getByText("0.99.0 · 正在下载 50%", { exact: true }).waitFor();
   assert.equal(
     await dialog.getByRole("progressbar").getAttribute("value"),
     "2000000",
@@ -108,8 +110,8 @@ try {
   assert.deepEqual(await page.evaluate(() => window.nativeCalls[0]), [
     "download",
     {
-      version: "9.0.0",
-      url: "https://github.com/Wepdekr/bangumi-pocket/releases/download/v9.0.0/bangumi-pocket-9.0.0.apk",
+      version: "0.99.0",
+      url: "https://github.com/Wepdekr/bangumi-pocket/releases/download/v0.99.0/bangumi-pocket-0.99.0.apk",
       size: 4000000,
       sha256: "a".repeat(64),
     },

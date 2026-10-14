@@ -118,7 +118,7 @@ async function friendsRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.10.2 (Android; personal unofficial client)",
+            "BangumiPocket/0.11.0 (Android; personal unofficial client)",
         },
         disableRedirects: true,
         connectTimeout: 12000,

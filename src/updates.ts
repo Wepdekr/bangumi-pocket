@@ -17,18 +17,26 @@ export type Update = {
   sha256?: string;
 };
 
-function parts(value: string) {
+export type UpdateLevel = "none" | "patch" | "minor" | "major";
+function versionParts(value: string) {
   const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(value);
   if (!match) throw new Error("版本信息格式不正确，请前往版本页面查看。");
-  return match.slice(1).map(Number);
+  const [major, minor, patch] = match.slice(1).map(Number);
+  if (![major, minor, patch].every(Number.isSafeInteger))
+    throw new Error("版本信息格式不正确，请前往版本页面查看。");
+  return { major, minor, patch };
+}
+export function updateLevel(latest: string, current: string): UpdateLevel {
+  const latestParts = versionParts(latest),
+    currentParts = versionParts(current);
+  for (const level of ["major", "minor", "patch"] as const) {
+    if (latestParts[level] !== currentParts[level])
+      return latestParts[level] > currentParts[level] ? level : "none";
+  }
+  return "none";
 }
 export function isNewer(latest: string, current: string): boolean {
-  const a = parts(latest),
-    b = parts(current);
-  for (let i = 0; i < 3; i++) {
-    if (a[i] !== b[i]) return a[i] > b[i];
-  }
-  return false;
+  return updateLevel(latest, current) !== "none";
 }
 export function parseRelease(data: unknown): Update {
   const release = data as {
@@ -53,7 +61,7 @@ export function parseRelease(data: unknown): Update {
   ) {
     throw new Error("暂无可用的正式版本，请稍后再试。");
   }
-  parts(release.tag_name);
+  versionParts(release.tag_name);
   const version = release.tag_name.replace(/^v/, "");
   const apk = Array.isArray(release.assets)
     ? release.assets.find(

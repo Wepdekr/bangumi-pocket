@@ -75,15 +75,13 @@ await page.route("https://api.bgm.tv/**", async (route) => {
       method === "PATCH"
     ) {
       const body = request.postDataJSON();
-      if ("type" in body) {
-        assert.deepEqual(Object.keys(body), ["type"]);
-        cloud.type = body.type;
-        writes.push({ kind: "status", body });
-      } else {
-        assert.deepEqual(Object.keys(body).sort(), ["comment", "rate"]);
-        Object.assign(cloud, body);
-        writes.push({ kind: "review", body });
-      }
+      assert.equal(typeof body.type, "number");
+      assert.deepEqual(
+        Object.keys(body).sort(),
+        "rate" in body ? ["comment", "rate", "type"] : ["type"],
+      );
+      Object.assign(cloud, body);
+      writes.push({ kind: "collection", body });
       return route.fulfill({ status: 204, headers });
     }
     if (url.pathname === `/v0/users/-/collections/${subject.id}/episodes`) {
@@ -238,7 +236,8 @@ try {
     .getByRole("button", { name: "保存并标记看过", exact: true })
     .click();
   await review.waitFor({ state: "detached" });
-  assert.deepEqual(writes.find((w) => w.kind === "review").body, {
+  assert.deepEqual(writes.find((w) => "rate" in w.body).body, {
+    type: 2,
     rate: 8,
     comment: "新的短评",
   });

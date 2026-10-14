@@ -1,6 +1,6 @@
 {
   "name": "bangumi-pocket",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "test:library": "node scripts/test-library.mjs",
     "test:air": "node scripts/test-air-progress.mjs",
     "test:updates": "node scripts/test-updates.mjs",
+    "test:update-download": "node scripts/test-update-download.mjs",
     "test:text": "node scripts/test-text.mjs",
     "android:release": "powershell -ExecutionPolicy Bypass -File scripts/release-android.ps1"
   },

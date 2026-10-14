@@ -216,13 +216,14 @@ export class SyncController {
       });
     });
   }
-  private async acknowledge(id: number, field: "status" | "review" | number[]) {
+  private async acknowledge(id: number, field: "collection" | number[]) {
     const entry = this.account.pending[id];
     if (!entry) return;
     const change: Pending = { ...entry, episodes: { ...entry.episodes } };
-    if (field === "status") delete change.status;
-    else if (field === "review") delete change.review;
-    else for (const ep of field) delete change.episodes[ep];
+    if (field === "collection") {
+      delete change.status;
+      delete change.review;
+    } else for (const ep of field) delete change.episodes[ep];
     const pending = { ...this.account.pending };
     if (
       change.status === undefined &&
@@ -238,10 +239,13 @@ export class SyncController {
     const token = this.session.token;
     for (const key of Object.keys(this.account.pending)) {
       const id = Number(key);
-      const status = this.account.pending[id]?.status;
-      if (status !== undefined) {
-        await this.deps.api.setStatus(token, id, status);
-        await this.acknowledge(id, "status");
+      const change = this.account.pending[id];
+      if (change?.status !== undefined || change?.review !== undefined) {
+        const status = change.status ?? this.account.library[id]?.status;
+        if (!status) throw new Error("收藏状态缺失，已保留待同步评价。");
+        await this.deps.api.setCollection(token, id, status, change.review);
+        // Status and review share one request and one persisted acknowledgement.
+        await this.acknowledge(id, "collection");
       }
       for (const watched of [true, false]) {
         const ids = Object.entries(this.account.pending[id]?.episodes || {})
@@ -252,11 +256,6 @@ export class SyncController {
           await this.deps.api.setEpisodes(token, id, chunk, watched);
           await this.acknowledge(id, chunk);
         }
-      }
-      const review = this.account.pending[id]?.review;
-      if (review !== undefined) {
-        await this.deps.api.setReview(token, id, review);
-        await this.acknowledge(id, "review");
       }
     }
   }

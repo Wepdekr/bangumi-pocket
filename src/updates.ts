@@ -14,6 +14,7 @@ export type Update = {
   apk: string;
   size: number;
   page: string;
+  sha256?: string;
 };
 
 function parts(value: string) {
@@ -41,6 +42,7 @@ export function parseRelease(data: unknown): Update {
       browser_download_url: string;
       size: number;
       state: string;
+      digest?: string;
     }[];
   } | null;
   if (
@@ -62,7 +64,13 @@ export function parseRelease(data: unknown): Update {
       )
     : undefined;
   const expected = `${REPO_URL}/releases/download/${release.tag_name}/bangumi-pocket-${version}.apk`;
-  if (!apk || apk.browser_download_url !== expected || !(apk.size > 0)) {
+  if (
+    !apk ||
+    apk.browser_download_url !== expected ||
+    !Number.isSafeInteger(apk.size) ||
+    apk.size <= 0 ||
+    apk.size > 100 * 1024 * 1024
+  ) {
     throw new Error("新版安装包尚未就绪，请前往版本页面查看。");
   }
   return {
@@ -71,6 +79,11 @@ export function parseRelease(data: unknown): Update {
     apk: expected,
     size: apk.size,
     page: `${REPO_URL}/releases/tag/${release.tag_name}`,
+    sha256:
+      typeof apk.digest === "string" &&
+      /^sha256:[a-f0-9]{64}$/i.test(apk.digest)
+        ? apk.digest.slice(7).toLowerCase()
+        : undefined,
   };
 }
 export async function installedVersion(): Promise<string> {

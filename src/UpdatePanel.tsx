@@ -1,6 +1,13 @@
 import { useCallback, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import UpdateDialog from "./UpdateDialog";
+import UpdateDownloadProgress from "./UpdateDownloadProgress";
+import {
+  useUpdateDownload,
+  downloadUpdate,
+  installUpdate,
+  cancelUpdate,
+} from "./update-download";
 import {
   APP_VERSION,
   RELEASES_URL,
@@ -12,6 +19,12 @@ import {
 } from "./updates";
 
 export default function UpdatePanel() {
+  const { state: downloadState, setState: setDownloadState } =
+    useUpdateDownload();
+  const [actionBusy, setActionBusy] = useState(false);
+  const downloading =
+    downloadState?.phase === "downloading" ||
+    downloadState?.phase === "verifying";
   const [current, setCurrent] = useState(APP_VERSION);
   const [busy, setBusy] = useState(false);
   const [update, setUpdate] = useState<Update>();
@@ -44,6 +57,26 @@ export default function UpdatePanel() {
       setBusy(false);
     }
   }
+  async function runDownloadAction(action: "download" | "install" | "cancel") {
+    if (actionBusy) return;
+    setActionBusy(true);
+    setError("");
+    try {
+      const next =
+        action === "cancel"
+          ? await cancelUpdate()
+          : action === "install"
+            ? await installUpdate()
+            : update
+              ? await downloadUpdate(update)
+              : undefined;
+      if (next) setDownloadState(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "更新操作失败，请重试。");
+    } finally {
+      setActionBusy(false);
+    }
+  }
   async function open(url: string) {
     try {
       await openUpdateUrl(url);
@@ -58,7 +91,11 @@ export default function UpdatePanel() {
           <h3>应用更新</h3>
           <p>番组口袋 · 当前版本 {current}</p>
         </div>
-        <button className="secondary" disabled={busy} onClick={check}>
+        <button
+          className="secondary"
+          disabled={busy || downloading || actionBusy}
+          onClick={check}
+        >
           <RefreshCw size={16} className={busy ? "spin" : ""} />
           {busy ? "正在检查…" : "检查更新"}
         </button>
@@ -72,6 +109,25 @@ export default function UpdatePanel() {
           </p>
         )}
       </div>
+      <UpdateDownloadProgress state={downloadState} />
+      {downloadState?.phase === "ready" && (
+        <button
+          className="secondary"
+          disabled={actionBusy}
+          onClick={() => void runDownloadAction("install")}
+        >
+          安装更新
+        </button>
+      )}
+      {downloading && (
+        <button
+          className="text-button"
+          disabled={actionBusy}
+          onClick={() => void runDownloadAction("cancel")}
+        >
+          取消下载
+        </button>
+      )}
       {error && (
         <p className="update-error" role="alert">
           {error}
@@ -93,7 +149,21 @@ export default function UpdatePanel() {
           update={update}
           error={error}
           close={closeDialog}
-          download={() => void open(update.apk)}
+          downloadState={
+            downloadState?.version === update.version
+              ? downloadState
+              : undefined
+          }
+          actionBusy={actionBusy}
+          download={() =>
+            void runDownloadAction(
+              downloadState?.phase === "ready" &&
+                downloadState.version === update.version
+                ? "install"
+                : "download",
+            )
+          }
+          cancelDownload={() => void runDownloadAction("cancel")}
           openPage={() => void open(update.page)}
         />
       )}

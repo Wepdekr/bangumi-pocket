@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Download, X } from "lucide-react";
+import UpdateDownloadProgress from "./UpdateDownloadProgress";
+import { directUpdates, type DownloadState } from "./update-download";
 import type { Update } from "./updates";
 
 function inline(text: string): ReactNode[] {
@@ -65,13 +67,22 @@ export default function UpdateDialog({
   close,
   download,
   openPage,
+  downloadState,
+  actionBusy,
+  cancelDownload,
 }: {
   update: Update;
   error: string;
   close: () => void;
   download: () => void;
   openPage: () => void;
+  downloadState?: DownloadState;
+  actionBusy: boolean;
+  cancelDownload: () => void;
 }) {
+  const downloading =
+    downloadState?.phase === "downloading" ||
+    downloadState?.phase === "verifying";
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -150,9 +161,8 @@ export default function UpdateDialog({
         </header>
         <div className="update-dialog-body">
           <ReleaseNotes text={update.notes} />
-          <p className="account-hint">
-            下载后打开安装包，按手机提示升级即可。
-          </p>
+          <p className="account-hint">下载后打开安装包，按手机提示升级即可。</p>
+          <UpdateDownloadProgress state={downloadState} />
           {error && (
             <p className="update-error" role="alert">
               {error}
@@ -164,12 +174,32 @@ export default function UpdateDialog({
         </div>
         <footer>
           <button className="text-button" onClick={close}>
-            暂不更新
+            {downloading ? "后台下载" : "暂不更新"}
           </button>
-          <button className="primary" onClick={download}>
-            <Download size={16} />
-            下载更新
-          </button>
+          {downloading ? (
+            <button
+              className="secondary"
+              disabled={actionBusy}
+              onClick={cancelDownload}
+            >
+              取消下载
+            </button>
+          ) : (
+            <button
+              className="primary"
+              disabled={actionBusy}
+              onClick={download}
+            >
+              <Download size={16} />
+              {actionBusy
+                ? "请稍候…"
+                : downloadState?.phase === "ready"
+                  ? "安装更新"
+                  : downloadState?.phase === "error"
+                    ? "重新下载"
+                    : "下载更新"}
+            </button>
+          )}
         </footer>
       </div>
     </div>,

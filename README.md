@@ -19,7 +19,9 @@ npm ci
 npm run dev
 ```
 
-## 功能（v0.10.0）
+## 功能（v0.10.1）
+
+收藏状态与评分、短评合并同步，生成的收藏动态会包含本次评价。断网时保留完整修改，联网后重试。
 
 详情标签栏滚动吸顶，角色与声优排列更紧凑，并按条目顺序展示。新增「关联」页签，优先展示前传、续集等主线关系，点击作品在 App 内打开详情，返回时回到上一部作品。
 
@@ -27,7 +29,7 @@ npm run dev
 
 章节页仅通过右侧勾选按钮合并显示观看和放送状态，不增加上方汇总框；原有集数样式保持不变，右侧粉色空心勾选按钮表示章节已放送未看，灰色空心表示未放送或日期待定，粉色实心表示已看。已完结作品的未看章节使用粉色空心。此标记适用于动画、电视剧等有有效章节日期的作品。角色网格统一顶部对齐，完整声优名单自然换行，避免长名单导致相邻头像错位。
 
-收藏页的「应用更新」读取最新 Release 的 update.json 附件，不依赖 GitHub REST API 的匿名 IP 限额，可手动检查最新正式版。有新版时弹窗显示版本号、安装包大小与更新说明，可滚动阅读、下载更新或暂不更新；关闭后可再次查看。下载后打开 APK，按 Android 提示安装；使用相同签名覆盖升级可保留账号和收藏。检查不需要登录，网络异常时可直接查看 GitHub 版本页面。
+收藏页的「应用更新」读取最新 Release 的 update.json 附件，不依赖 GitHub REST API 的匿名 IP 限额，可手动检查最新正式版。有新版时弹窗显示版本号、安装包大小与更新说明，可滚动阅读、下载更新或暂不更新；关闭后可再次查看。Android App 内直接下载 APK，显示进度并支持后台下载、取消和重试；下载完成后校验完整性、包名、版本和签名，再打开系统安装界面。首次安装会引导开启本 App 的安装权限，授权后继续安装；覆盖升级可保留账号和收藏。检查不需要登录，网络异常时可直接查看 GitHub 版本页面。
 
 角色图片区采用圆角方形，图片从顶部居中裁切，避免全身立绘默认居中裁切后只显示躯干。
 
@@ -124,13 +126,13 @@ npm run android:release
 已有通过验证的本机安装包可跳过重新构建：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.0-debug.apk
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.1-debug.apk
 ```
 
 仅本地校验安装包、生成说明和校验文件，不发布：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.0-debug.apk -ValidateOnly
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.1-debug.apk -ValidateOnly
 ```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。

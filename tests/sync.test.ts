@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SyncController } from "../src/sync";
-import { AccountError } from "../src/account-api";
+import { accountApi, accountRequest, AccountError } from "../src/account-api";
 import { watchedThrough } from "../src/episode-progress";
 import { imageUrl } from "../src/images";
 import type {
@@ -84,13 +84,6 @@ function harness(guest: Record<number, Saved> = {}) {
       guest = clone(library);
     },
     api: {
-      setReview: async (token: string, id: number, review: Review) => {
-        online();
-        if (failReview) throw new AccountError(0);
-        const user = uid(token);
-        calls.push({ kind: "review", user, id, review });
-        Object.assign(accounts[user][id], review);
-      },
       me: async (token: string) => {
         online();
         const id = uid(token);
@@ -128,14 +121,24 @@ function harness(guest: Record<number, Saved> = {}) {
         }));
         return { data: data.slice(offset), total: data.length };
       },
-      setStatus: async (token: string, id: number, status: Saved["status"]) => {
+      setCollection: async (
+        token: string,
+        id: number,
+        status: Saved["status"],
+        review?: Review,
+      ) => {
         online();
+        if (review && failReview) throw new AccountError(0);
         const user = uid(token);
-        calls.push({ kind: "status", user, id, status });
+        calls.push({ kind: "collection", user, id, status, review });
         const type = { wish: 1, done: 2, doing: 3, hold: 4, dropped: 5 }[
           status
         ];
-        accounts[user][id] = { ...(accounts[user][id] || remote(id)), type };
+        accounts[user][id] = {
+          ...(accounts[user][id] || remote(id)),
+          type,
+          ...review,
+        };
       },
       setEpisodes: async (
         token: string,
@@ -364,33 +367,60 @@ test("Reviews persist offline across restart and sync without changing privacy o
   assert.equal(h.accounts[1][1].rate, 0);
   assert.equal(h.accounts[1][1].comment, "");
 });
-test("Failed review upload retries only the review after successful status and episode writes", async () => {
+test("Failed collection upload keeps status and review together across restart", async () => {
   const h = harness();
   h.accounts[1][1] = remote(1);
+  let c = h.create();
+  await c.initialize();
+  await c.connect("test-account-1");
+  h.failReview = true;
+  const review = { rate: 10, comment: "非常喜欢" };
+  assert.equal(await c.save(subject(1), "done", undefined, review), false);
+  assert.equal(h.accounts[1][1].type, 3);
+  assert.equal(h.calls.length, 0);
+  c = h.create();
+  await c.initialize();
+  const pending = JSON.parse(h.storage.get("account-library-v1:1")!).pending[1];
+  assert.equal(pending.status, "done");
+  assert.deepEqual(pending.review, review);
+  h.failReview = false;
+  await c.sync();
+  assert.deepEqual(
+    h.calls.map((call) => call.kind),
+    ["collection"],
+  );
+  assert.equal(h.calls[0].status, "done");
+  assert.deepEqual(h.calls[0].review, review);
+  assert.equal(c.getSnapshot().pending, 0);
+});
+
+test("Failed chapter write retries chapters without repeating the successful rated collection", async () => {
+  const h = harness();
+  h.accounts[1][1] = remote(1, 3, [101]);
   const c = h.create();
   await c.initialize();
   await c.connect("test-account-1");
   await c.hydrate(1);
-  h.failReview = true;
+  h.failClear = true;
   assert.equal(
-    await c.save(subject(1), "done", [101, 102, 103], {
-      rate: 10,
-      comment: "非常喜欢",
-    }),
+    await c.save(subject(1), "done", [102], { rate: 8, comment: "感想" }),
     false,
   );
   const count = h.calls.length;
-  assert.equal(h.accounts[1][1].type, 2);
-  assert.equal(h.accounts[1][1].watched.length, 3);
-  assert.equal(c.getSnapshot().library[1].rate, 10);
-  h.failReview = false;
+  const pending = JSON.parse(h.storage.get("account-library-v1:1")!).pending[1];
+  assert.equal(pending.status, undefined);
+  assert.equal(pending.review, undefined);
+  assert.deepEqual(pending.episodes, { "101": false });
+  h.failClear = false;
   await c.sync();
   assert.deepEqual(
     h.calls.slice(count).map((call) => call.kind),
-    ["review"],
+    ["episodes"],
   );
-  assert.equal(c.getSnapshot().pending, 0);
+  assert.equal(h.accounts[1][1].rate, 8);
+  assert.equal(h.accounts[1][1].comment, "感想");
 });
+
 test("Local reviews survive progress and status changes; invalid ratings are rejected", async () => {
   const h = harness();
   const c = h.create();
@@ -482,4 +512,101 @@ test("Legacy image addresses are upgraded without changing their paths or cache 
   );
   assert.equal(imageUrl(undefined), undefined);
   assert.equal(imageUrl("javascript:alert(1)"), undefined);
+});
+
+// Model the official server's mayCreateTimeline: only requests containing type
+// emit a collection event, whose review is copied from the request body.
+test("Actual account transport sends complete reviews in collection timeline payloads", async () => {
+  const h = harness();
+  const requests: { method: string; body: Record<string, unknown> }[] = [];
+  const timeline: Record<string, unknown>[] = [];
+  const originalFetch = globalThis.fetch;
+  let exists = true;
+  globalThis.fetch = async (_input, init) => {
+    const method = init?.method ?? "GET";
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    assert.equal(
+      new Headers(init?.headers).get("authorization"),
+      "Bearer test-account-1",
+    );
+    assert.equal(init?.cache, "no-store");
+    assert.equal(init?.credentials, "omit");
+    requests.push({ method, body });
+    if (method === "PATCH" && !exists)
+      return new Response("{}", { status: 404 });
+    exists = true;
+    Object.assign(h.accounts[1][1], body);
+    if ("type" in body)
+      timeline.push({
+        type: body.type,
+        rate: body.rate ?? 0,
+        comment: body.comment ?? "",
+      });
+    return new Response(null, { status: 204 });
+  };
+  try {
+    h.accounts[1][1] = remote(1);
+    // Reproduce the previous sequence: review stored, timeline review empty.
+    await accountRequest(
+      "test-account-1",
+      "/v0/users/-/collections/1",
+      "PATCH",
+      { type: 2 },
+    );
+    await accountRequest(
+      "test-account-1",
+      "/v0/users/-/collections/1",
+      "PATCH",
+      { rate: 8, comment: "感想" },
+    );
+    assert.equal(h.accounts[1][1].rate, 8);
+    assert.equal(h.accounts[1][1].comment, "感想");
+    assert.deepEqual(timeline.pop(), { type: 2, rate: 0, comment: "" });
+    requests.length = 0;
+    h.accounts[1][1] = remote(1);
+    h.deps.api.setCollection = accountApi.setCollection;
+    const c = h.create();
+    await c.initialize();
+    await c.connect("test-account-1");
+    for (const status of ["done", "hold", "dropped"] as const) {
+      const review = { rate: 8, comment: `感想 ${status}` };
+      assert.equal(await c.save(subject(1), status, undefined, review), true);
+      assert.deepEqual(requests.at(-1)?.body, {
+        type: { done: 2, hold: 4, dropped: 5 }[status],
+        ...review,
+      });
+      assert.deepEqual(timeline.at(-1), requests.at(-1)?.body);
+    }
+    assert.equal(
+      requests.length,
+      3,
+      "One collection request for each rated status change",
+    );
+    assert.equal(c.getSnapshot().pending, 0);
+    // Editing only a review still supplies its unchanged collection status.
+    await c.save(subject(1), "dropped", undefined, { rate: 0, comment: "" });
+    assert.deepEqual(timeline.at(-1), { type: 5, rate: 0, comment: "" });
+    // New collections retain the same complete payload through PATCH -> POST.
+    exists = false;
+    await accountApi.setCollection("test-account-1", 1, "done", {
+      rate: 10,
+      comment: "新收藏",
+    });
+    assert.deepEqual(
+      requests.slice(-2).map((r) => r.method),
+      ["PATCH", "POST"],
+    );
+    assert.deepEqual(requests.at(-2)?.body, requests.at(-1)?.body);
+    assert.deepEqual(timeline.at(-1), { type: 2, rate: 10, comment: "新收藏" });
+    assert.equal("private" in requests.at(-1)!.body, false);
+    assert.equal("tags" in requests.at(-1)!.body, false);
+    await accountApi.setCollection("test-account-1", 1, "wish");
+    assert.deepEqual(
+      requests.at(-1)?.body,
+      { type: 1 },
+      "Skipping a review does not erase stored review fields",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

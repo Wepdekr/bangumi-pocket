@@ -68,7 +68,7 @@ export async function accountRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.10.0 (Android; personal unofficial client)",
+            "BangumiPocket/0.10.1 (Android; personal unofficial client)",
         },
         data: body,
         connectTimeout: 12000,
@@ -95,13 +95,6 @@ export async function accountRequest<T>(
   }
 }
 export const accountApi = {
-  setReview: (token: string, id: number, review: Review) =>
-    accountRequest<void>(
-      token,
-      `/v0/users/-/collections/${id}`,
-      "PATCH",
-      review,
-    ),
   me: (token: string) => accountRequest<User>(token, "/v0/me"),
   collections: (token: string, username: string, offset = 0) =>
     accountRequest<{ data: RemoteCollection[]; total: number }>(
@@ -113,17 +106,20 @@ export const accountApi = {
       token,
       `/v0/users/-/collections/${id}/episodes?episode_type=0&limit=100&offset=${offset}`,
     ),
-  async setStatus(token: string, id: number, status: Saved["status"]) {
+  async setCollection(
+    token: string,
+    id: number,
+    status: Saved["status"],
+    review?: Review,
+  ) {
     const path = `/v0/users/-/collections/${id}`;
+    // The server builds timeline content from this request, not the saved collection.
+    const payload = { type: statusToRemote[status], ...review };
     try {
-      await accountRequest<void>(token, path, "PATCH", {
-        type: statusToRemote[status],
-      });
+      await accountRequest<void>(token, path, "PATCH", payload);
     } catch (error) {
       if (!(error instanceof AccountError) || error.status !== 404) throw error;
-      await accountRequest<void>(token, path, "POST", {
-        type: statusToRemote[status],
-      });
+      await accountRequest<void>(token, path, "POST", payload);
     }
   },
   setEpisodes: (

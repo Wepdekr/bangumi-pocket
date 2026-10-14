@@ -28,12 +28,30 @@ const release = {
       name: "bangumi-pocket-9.0.0.apk",
       state: "uploaded",
       size: 4377840,
+      digest: `sha256:${"a".repeat(64)}`,
       browser_download_url:
         "https://github.com/Wepdekr/bangumi-pocket/releases/download/v9.0.0/bangumi-pocket-9.0.0.apk",
     },
   ],
 };
 assert.equal(parseRelease(release).version, "9.0.0");
+assert.equal(parseRelease(release).sha256, "a".repeat(64));
+assert.equal(
+  parseRelease({
+    ...release,
+    assets: [{ ...release.assets[0], digest: "bad" }],
+  }).sha256,
+  undefined,
+);
+assert.throws(() =>
+  parseRelease({ ...release, assets: [{ ...release.assets[0], size: 1.5 }] }),
+);
+assert.throws(() =>
+  parseRelease({
+    ...release,
+    assets: [{ ...release.assets[0], size: 200 * 1024 * 1024 }],
+  }),
+);
 // Exercise the Android HTTP branch, including JSON attachment responses returned as text.
 await build({
   entryPoints: ["src/updates.ts"],

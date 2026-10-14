@@ -7,6 +7,13 @@ import java.nio.file.Files;
 public class UpdateChecksTest {
     private final String sha = "a".repeat(64);
     private final String url = "https://github.com/Wepdekr/bangumi-pocket/releases/download/v1.2.3/bangumi-pocket-1.2.3.apk";
+    @Test public void acceptsIntegralJsonNumbersAndRejectsInvalidSizes() {
+        assertEquals(4393160L, UpdateChecks.parseSize(Integer.valueOf(4393160)));
+        assertEquals(4393160L, UpdateChecks.parseSize(Long.valueOf(4393160)));
+        assertEquals(4393160L, UpdateChecks.parseSize(Double.valueOf(4393160)));
+        Object[] invalid = {null, "4393160", true, -1, 0, 1.5, Double.NaN, Double.POSITIVE_INFINITY, Long.MAX_VALUE, UpdateChecks.MAX_SIZE + 1};
+        for (Object value : invalid) assertThrows(IllegalArgumentException.class, () -> UpdateChecks.parseSize(value));
+    }
     @Test public void acceptsOnlyOurVersionedApkAndBoundedSize() {
         UpdateChecks.validate("1.2.3", url, 4000000, sha);
         String[] invalid = {"http" + url.substring(5), url + "?token=secret", url.replace("Wepdekr", "other"), url + "#x", "file:///tmp/a.apk"};

@@ -7,6 +7,15 @@ import java.util.Arrays;
 
 final class UpdateChecks {
     static final long MAX_SIZE = 100L * 1024 * 1024;
+    static long parseSize(Object value) {
+        if (value instanceof Number) {
+            double size = ((Number) value).doubleValue();
+            if (Double.isFinite(size) && size > 0 && size <= MAX_SIZE && size == Math.floor(size)) {
+                return ((Number) value).longValue();
+            }
+        }
+        throw new IllegalArgumentException("更新信息中的安装包大小无效，请重新检查更新。");
+    }
     static void validate(String version, String url, long size, String sha) {
         if (version == null || !version.matches("(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})")
             || !String.format("https://github.com/Wepdekr/bangumi-pocket/releases/download/v%s/bangumi-pocket-%s.apk", version, version).equals(url)

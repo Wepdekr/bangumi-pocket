@@ -29,7 +29,7 @@ export async function request<T>(path: string, body?: unknown): Promise<T> {
         headers: {
           "Content-Type": "application/json",
           "User-Agent":
-            "BangumiPocket/0.10.1 (Android; personal unofficial client)",
+            "BangumiPocket/0.10.2 (Android; personal unofficial client)",
           ...(access ? { Authorization: `Bearer ${access.token}` } : {}),
         },
         data: body,

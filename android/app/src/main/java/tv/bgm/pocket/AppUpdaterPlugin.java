@@ -105,7 +105,8 @@ public class AppUpdaterPlugin extends Plugin {
         worker.execute(() -> {
             try {
                 String v = call.getString("version"), url = call.getString("url"), hash = call.getString("sha256");
-                long bytes = call.getLong("size", 0L);
+                // JSON numbers can be Integer, Long or Double after crossing the JS bridge.
+                long bytes = UpdateChecks.parseSize(call.getData().opt("size"));
                 UpdateChecks.validate(v, url, bytes, hash);
                 if (phase.equals("downloading") || phase.equals("verifying") || opening) {
                     call.reject("已有更新任务正在进行。"); return;

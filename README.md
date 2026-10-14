@@ -19,7 +19,9 @@ npm ci
 npm run dev
 ```
 
-## 功能（v0.10.1）
+## 功能（v0.10.2）
+
+修复更新下载参数的数字类型兼容问题，避免有效更新被误报为信息不完整。
 
 收藏状态与评分、短评合并同步，生成的收藏动态会包含本次评价。断网时保留完整修改，联网后重试。
 
@@ -126,13 +128,13 @@ npm run android:release
 已有通过验证的本机安装包可跳过重新构建：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.1-debug.apk
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.2-debug.apk
 ```
 
 仅本地校验安装包、生成说明和校验文件，不发布：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.1-debug.apk -ValidateOnly
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.10.2-debug.apk -ValidateOnly
 ```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。

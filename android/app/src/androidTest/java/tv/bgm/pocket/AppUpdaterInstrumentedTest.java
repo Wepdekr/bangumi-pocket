@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.os.ParcelFileDescriptor;
 import android.provider.Settings;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -13,8 +12,6 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import java.io.FileInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,6 +34,41 @@ public class AppUpdaterInstrumentedTest {
         if (method.equals("installRejected")) { assertNotNull(error.get()); JSObject result = new JSObject(); result.put("rejected", error.get()); return result; }
         assertNull("Plugin rejected: " + error.get(), error.get());
         return value.get();
+    }
+    private String javascript(MainActivity activity, String expression) throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<String> result = new AtomicReference<>();
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+            activity.getBridge().getWebView().evaluateJavascript(expression, value -> { result.set(value); done.countDown(); }));
+        assertTrue("WebView evaluation timed out", done.await(10, TimeUnit.SECONDS));
+        return result.get();
+    }
+    private JSObject downloadThroughBridge(MainActivity activity, JSObject metadata) throws Exception {
+        long deadline = System.currentTimeMillis() + 15000;
+        while (!"true".equals(javascript(activity, "Boolean(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AppUpdater)"))) {
+            assertTrue("Updater JS proxy not loaded", System.currentTimeMillis() < deadline);
+            Thread.sleep(100);
+        }
+        javascript(activity, "window.__updateBridgeResult = null; window.Capacitor.Plugins.AppUpdater.download(" + metadata.toString() + ").then(value => window.__updateBridgeResult = {ok:value}).catch(e => window.__updateBridgeResult = {error:e.message});");
+        deadline = System.currentTimeMillis() + 15000;
+        while (System.currentTimeMillis() < deadline) {
+            String encoded = javascript(activity, "JSON.stringify(window.__updateBridgeResult)");
+            String json = new org.json.JSONArray("[" + encoded + "]").optString(0, "null");
+            if (!"null".equals(json)) {
+                JSObject result = new JSObject(json);
+                assertFalse("Actual JS bridge rejected: " + result.optString("error"), result.has("error"));
+                return new JSObject(result.getJSONObject("ok").toString());
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("Bridge download response timed out");
+    }
+    @Test public void jsonNumbersMatchTheActualBridgeRepresentation() throws Exception {
+        JSObject metadata = new JSObject("{\"size\":4393160}");
+        assertTrue(metadata.opt("size") instanceof Integer);
+        PluginCall call = new PluginCall(null, "AppUpdater", "test", "download", metadata);
+        assertEquals(Long.valueOf(0), call.getLong("size", 0L));
+        assertEquals(4393160L, UpdateChecks.parseSize(metadata.opt("size")));
     }
     @Test public void downloadsRealReleaseVerifiesAndRequestsInstallationWithoutBrowser() throws Exception {
         String version = InstrumentationRegistry.getArguments().getString("updateVersion");
@@ -65,7 +97,7 @@ public class AppUpdaterInstrumentedTest {
             metadata.put("url", url);
             metadata.put("size", Long.parseLong(size));
             metadata.put("sha256", sha);
-            if (permissionMode) assertEquals("downloading", invoke(plugin, "download", metadata).getString("phase"));
+            if (permissionMode) assertEquals("downloading", downloadThroughBridge(activity, metadata).getString("phase"));
             long deadline = System.currentTimeMillis() + 150000;
             JSObject state;
             do {

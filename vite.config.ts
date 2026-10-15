@@ -61,11 +61,22 @@ const updateProxy: Record<string, ProxyOptions> = {
     },
   },
 };
+const accountProxy: Record<string, ProxyOptions> = {
+  "/account-api": {
+    ...friendsProxy["/friends-api"],
+    rewrite: (path) => path.replace(/^\/account-api/, "/p1"),
+  },
+};
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: { ...communityProxy, ...friendsProxy, ...updateProxy },
+    proxy: {
+      ...communityProxy,
+      ...friendsProxy,
+      ...accountProxy,
+      ...updateProxy,
+    },
     watch: {
       ignored: [
         "**/.toolchain/**",
@@ -75,6 +86,13 @@ export default defineConfig({
       ],
     },
   },
-  preview: { proxy: { ...communityProxy, ...friendsProxy, ...updateProxy } },
+  preview: {
+    proxy: {
+      ...communityProxy,
+      ...friendsProxy,
+      ...accountProxy,
+      ...updateProxy,
+    },
+  },
   build: { target: "es2020" },
 });

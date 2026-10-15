@@ -278,7 +278,8 @@ try {
   const anime = page
     .locator(".friend-card")
     .filter({ hasText: "动画批量进度" });
-  assert.match(await anime.innerText(), /章节进度：25 \/ 25/);
+  assert.equal(await anime.locator(".friend-action").innerText(), "完成了");
+  assert.match(await anime.innerText(), /25 of 25 话/);
   assert.doesNotMatch(await anime.innerText(), /卷数|\?\?/);
   await page.getByText("卷数：3 / 10", { exact: true }).waitFor();
   await page.getByText("卷数：2", { exact: true }).waitFor();

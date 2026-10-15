@@ -1,7 +1,9 @@
 import type { Episode } from "./types";
 
+export type WatchThrough = { episodeId: number; episodeIds: number[] };
+
 // Resolve real chapter IDs across all pages before changing any saved progress.
-export async function watchedThrough(
+export async function planWatchedThrough(
   target: Episode,
   watched: number[],
   loaded: Episode[],
@@ -26,12 +28,18 @@ export async function watchedThrough(
     !chapters.some((e) => e.id === target.id)
   )
     throw new Error("章节资料异常，请重新加载后重试。");
-  return [
-    ...new Set([
-      ...watched,
-      ...chapters
-        .filter((e) => e.type === 0 && e.sort <= target.sort)
-        .map((e) => e.id),
-    ]),
-  ];
+  if (target.type !== 0) throw new Error("只能批量标记正篇章节。");
+  const episodeIds = chapters
+    .filter((e) => e.type === 0 && e.sort <= target.sort)
+    .map((e) => e.id);
+  return {
+    watched: [...new Set([...watched, ...episodeIds])],
+    through: { episodeId: target.id, episodeIds },
+  };
+}
+
+export async function watchedThrough(
+  ...args: Parameters<typeof planWatchedThrough>
+) {
+  return (await planWatchedThrough(...args)).watched;
 }

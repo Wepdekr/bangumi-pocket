@@ -19,7 +19,9 @@ npm ci
 npm run dev
 ```
 
-## 功能（v0.11.0）
+## 功能（v0.11.1）
+
+章节进度同步与网页保持一致：「看到这里」生成累计完成进度动态，单集勾选显示相应状态；保留后续已看章节，断网后按原操作顺序重试。
 
 Android App 每次启动自动检查更新，使用 `major.minor.patch` 比较版本。无更新或仅 `patch` 更新时不提示；`minor` 更新显示说明，可选择更新；`major` 更新需安装后继续使用，已确认的要求在重启后仍保留。检查失败且没有已确认的强制要求时保持安静，手动检查仍可发现所有新版本。
 
@@ -130,13 +132,13 @@ npm run android:release
 已有通过验证的本机安装包可跳过重新构建：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.11.0-debug.apk
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.11.1-debug.apk
 ```
 
 仅本地校验安装包、生成说明和校验文件，不发布：
 
 ```powershell
-npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.11.0-debug.apk -ValidateOnly
+npm run android:release -- -ExistingApk artifacts/bangumi-pocket-0.11.1-debug.apk -ValidateOnly
 ```
 
 也可以用 Android Studio 打开 `android/` 工程。前端修改后需执行 `npm run android:sync` 再编译 Android。

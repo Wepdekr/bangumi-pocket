@@ -34,6 +34,22 @@ const watched = new Set([1001]);
 const writes = [];
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
+await page.route("**/account-api/collections/episodes/*", async (route) => {
+  const request = route.request();
+  assert.equal(request.headers().authorization, "Bearer test-ui-account");
+  assert.equal(request.method(), "PATCH");
+  if (expired) return route.fulfill({ status: 401, json: {} });
+  if (offline) return route.abort();
+  const body = request.postDataJSON();
+  const id = Number(new URL(request.url()).pathname.split("/").at(-1));
+  const ids = body.batch ? [1001, 1002].filter((ep) => ep <= id) : [id];
+  for (const ep of ids) {
+    if (body.batch || body.type === 2) watched.add(ep);
+    else watched.delete(ep);
+  }
+  writes.push({ kind: "web-progress", id, body });
+  return route.fulfill({ json: {} });
+});
 await page.addInitScript(
   ({ guest }) =>
     localStorage.setItem(
@@ -196,10 +212,18 @@ try {
   await page
     .getByRole("button", { name: "取消标记第2话", exact: true })
     .waitFor();
-  assert.deepEqual(writes.find((w) => w.kind === "episodes").body, {
-    episode_id: [1002],
-    type: 2,
-  });
+  assert.deepEqual(
+    writes.find((w) => w.kind === "web-progress"),
+    {
+      kind: "web-progress",
+      id: 1002,
+      body: { batch: true },
+    },
+  );
+  assert.equal(
+    writes.some((w) => w.kind === "episodes"),
+    false,
+  );
   assert.equal(cloud.type, 2);
   assert.equal(
     cloud.rate,

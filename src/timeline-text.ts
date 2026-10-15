@@ -28,10 +28,29 @@ function total(value?: string): string | undefined {
     : undefined;
 }
 
+export function progressAction(event: FriendEvent): string {
+  const progress = event.memo.progress;
+  if (progress?.batch)
+    return progress.batch.subject.type === 1 ? "读过" : "完成了";
+  if (progress?.single)
+    return (
+      ({ 1: "想看", 2: "看过", 3: "抛弃" } as Record<number, string>)[
+        event.type
+      ] || "更新了章节进度"
+    );
+  return "更新了章节进度";
+}
+
 export function batchProgressText(
   batch: NonNullable<FriendEvent["memo"]["progress"]>["batch"],
 ): string {
   if (!batch) return "更新了作品进度";
+  if (batch.subject.type !== 1 && batch.epsUpdate !== undefined) {
+    const count = total(batch.epsTotal);
+    return count
+      ? `${batch.epsUpdate} of ${count} 话`
+      : `${batch.epsUpdate} 话`;
+  }
   const parts: string[] = [];
   if (batch.epsUpdate !== undefined) {
     const count = total(batch.epsTotal);

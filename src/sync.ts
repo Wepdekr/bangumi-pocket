@@ -5,13 +5,24 @@ import { sessionVault } from "./vault";
 import { readFriendsTimeline, setTimelineReaction } from "./friends-api";
 import type { FriendEvent } from "./friends-api";
 import type { Saved, Session, Subject, User, Review } from "./types";
+import type { WatchThrough } from "./episode-progress";
 
 type Library = Record<number, Saved>;
+type ProgressOperation =
+  | { episodeId: number; batch: true; episodeIds: number[] }
+  | { episodeId: number; type: 0 | 2 };
 type Pending = {
   status?: Saved["status"];
   review?: Review;
   episodes: Record<number, boolean>;
+  // Ordered web operations survive restarts; episodes keeps older pending edits.
+  progress?: ProgressOperation[];
 };
+const hasPending = (change: Pending) =>
+  change.status !== undefined ||
+  change.review !== undefined ||
+  Object.keys(change.episodes).length > 0 ||
+  !!change.progress?.length;
 type AccountCache = {
   library: Library;
   pending: Record<number, Pending>;
@@ -216,21 +227,21 @@ export class SyncController {
       });
     });
   }
-  private async acknowledge(id: number, field: "collection" | number[]) {
+  private async acknowledge(
+    id: number,
+    field: "collection" | "progress" | number[],
+  ) {
     const entry = this.account.pending[id];
     if (!entry) return;
     const change: Pending = { ...entry, episodes: { ...entry.episodes } };
     if (field === "collection") {
       delete change.status;
       delete change.review;
+    } else if (field === "progress") {
+      change.progress = change.progress?.slice(1);
     } else for (const ep of field) delete change.episodes[ep];
     const pending = { ...this.account.pending };
-    if (
-      change.status === undefined &&
-      change.review === undefined &&
-      !Object.keys(change.episodes).length
-    )
-      delete pending[id];
+    if (!hasPending(change)) delete pending[id];
     else pending[id] = change;
     await this.store({ ...this.account, pending });
   }
@@ -256,6 +267,15 @@ export class SyncController {
           await this.deps.api.setEpisodes(token, id, chunk, watched);
           await this.acknowledge(id, chunk);
         }
+      }
+      while (this.account.pending[id]?.progress?.length) {
+        const operation = this.account.pending[id].progress![0];
+        await this.deps.api.setEpisodeProgress(
+          token,
+          operation.episodeId,
+          "batch" in operation ? { batch: true } : { type: operation.type },
+        );
+        await this.acknowledge(id, "progress");
       }
     }
   }
@@ -330,6 +350,7 @@ export class SyncController {
     status: Saved["status"] | null,
     watched?: number[],
     review?: Review,
+    through?: WatchThrough,
   ) {
     return this.exclusive(async () => {
       if (
@@ -338,6 +359,19 @@ export class SyncController {
       )
         throw new Error("评分必须是 0 到 10 之间的整数。");
       const old = this.state.library[subject.id];
+      if (
+        through &&
+        (!watched ||
+          ![2, 6].includes(subject.type ?? 0) ||
+          !Number.isSafeInteger(through.episodeId) ||
+          through.episodeId <= 0 ||
+          !through.episodeIds.includes(through.episodeId) ||
+          through.episodeIds.some(
+            (id) =>
+              !Number.isSafeInteger(id) || id <= 0 || !watched.includes(id),
+          ))
+      )
+        throw new Error("批量章节资料异常，请重新加载后重试。");
       if (!this.session) {
         const library = { ...this.guest };
         if (status === null) delete library[subject.id];
@@ -362,23 +396,35 @@ export class SyncController {
       const change: Pending = {
         ...this.account.pending[subject.id],
         episodes: { ...this.account.pending[subject.id]?.episodes },
+        progress: [...(this.account.pending[subject.id]?.progress || [])],
       };
       if (!old || old.status !== status) change.status = status;
       if (review !== undefined) change.review = { ...review };
       if (watched !== undefined) {
         const before = new Set(old?.watched || []);
         const after = new Set(watched);
-        for (const ep of new Set([...before, ...after]))
-          if (before.has(ep) !== after.has(ep))
-            change.episodes[ep] = after.has(ep);
+        if (through) {
+          change.progress!.push({
+            ...through,
+            episodeIds: [...through.episodeIds],
+            batch: true,
+          });
+        }
+        for (const ep of new Set([...after, ...before]))
+          if (
+            before.has(ep) !== after.has(ep) &&
+            !through?.episodeIds.includes(ep)
+          ) {
+            if ([2, 6].includes(subject.type ?? 0)) {
+              change.progress!.push({
+                episodeId: ep,
+                type: after.has(ep) ? 2 : 0,
+              });
+            } else change.episodes[ep] = after.has(ep);
+          }
       }
       const pending = { ...this.account.pending };
-      if (
-        change.status !== undefined ||
-        change.review !== undefined ||
-        Object.keys(change.episodes).length
-      )
-        pending[subject.id] = change;
+      if (hasPending(change)) pending[subject.id] = change;
       const saved: Saved = {
         ...old,
         ...review,
@@ -424,6 +470,12 @@ export class SyncController {
     )) {
       if (value) merged.add(Number(ep));
       else merged.delete(Number(ep));
+    }
+    for (const operation of this.account.pending[id]?.progress || []) {
+      if ("batch" in operation) {
+        for (const ep of operation.episodeIds) merged.add(ep);
+      } else if (operation.type === 2) merged.add(operation.episodeId);
+      else merged.delete(operation.episodeId);
     }
     const saved = {
       ...old,

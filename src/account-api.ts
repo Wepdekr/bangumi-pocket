@@ -45,15 +45,22 @@ export async function accountRequest<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  service: "public" | "web" = "public",
 ): Promise<T> {
   // Account requests never enter the public cache or put tokens into URLs.
-  const url = "https://api.bgm.tv" + path;
+  const url =
+    service === "web"
+      ? Capacitor.isNativePlatform()
+        ? "https://next.bgm.tv/p1" + path
+        : "/account-api" + path
+      : "https://api.bgm.tv" + path;
   const operation =
     path === "/v0/me"
       ? "验证账号"
       : /\/episodes\?/.test(path)
         ? "读取章节进度"
-        : path.endsWith("/episodes")
+        : path.endsWith("/episodes") ||
+            path.startsWith("/collections/episodes/")
           ? "更新章节进度"
           : method !== "GET"
             ? "更新收藏"
@@ -68,11 +75,12 @@ export async function accountRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.11.0 (Android; personal unofficial client)",
+            "BangumiPocket/0.11.1 (Android; personal unofficial client)",
         },
         data: body,
         connectTimeout: 12000,
         readTimeout: 18000,
+        disableRedirects: true,
       });
       if (response.status < 200 || response.status >= 300)
         throw new AccountError(response.status, operation);
@@ -95,6 +103,19 @@ export async function accountRequest<T>(
   }
 }
 export const accountApi = {
+  // Same route and batch semantics as the official website's chapter controls.
+  setEpisodeProgress: (
+    token: string,
+    episodeId: number,
+    progress: { batch: true } | { type: 0 | 2 },
+  ) =>
+    accountRequest<void>(
+      token,
+      `/collections/episodes/${episodeId}`,
+      "PATCH",
+      progress,
+      "web",
+    ),
   me: (token: string) => accountRequest<User>(token, "/v0/me"),
   collections: (token: string, username: string, offset = 0) =>
     accountRequest<{ data: RemoteCollection[]; total: number }>(

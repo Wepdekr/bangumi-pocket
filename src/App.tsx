@@ -35,7 +35,7 @@ import ReviewSheet from "./ReviewSheet";
 import CommentsTab from "./CommentsTab";
 import RelationsTab from "./RelationsTab";
 import FriendsView from "./FriendsView";
-import { watchedThrough } from "./episode-progress";
+import { planWatchedThrough, type WatchThrough } from "./episode-progress";
 import { imageUrl } from "./images";
 import type { SyncState } from "./sync";
 import type {
@@ -302,10 +302,17 @@ export default function App() {
     status: Saved["status"] | null,
     watched?: number[],
     review?: Review,
+    through?: WatchThrough,
   ) => {
     if (!ready) return false;
     try {
-      const synced = await syncController.save(s, status, watched, review);
+      const synced = await syncController.save(
+        s,
+        status,
+        watched,
+        review,
+        through,
+      );
       setToast(
         account.user
           ? synced
@@ -987,6 +994,7 @@ function Detail({
     status: Saved["status"] | null,
     watched?: number[],
     review?: Review,
+    through?: WatchThrough,
   ) => Promise<boolean>;
   ready: boolean;
   cloudMode: boolean;
@@ -1056,7 +1064,11 @@ function Detail({
   }, [collectionOpen]);
   const s = subject.data;
   const ep = [...(episodes.data?.data || []), ...moreEpisodes];
-  async function change(status: Saved["status"] | null, watched?: number[]) {
+  async function change(
+    status: Saved["status"] | null,
+    watched?: number[],
+    through?: WatchThrough,
+  ) {
     if (!s) return;
     setCollectionOpen(false);
     if (
@@ -1071,7 +1083,7 @@ function Detail({
     }
     setSaving(true);
     try {
-      const stored = await save(s, status, watched);
+      const stored = await save(s, status, watched, undefined, through);
       const total = episodes.data?.total ?? 0;
       // Count only a complete normal-episode list, never one page or a partial season.
       if (
@@ -1108,7 +1120,7 @@ function Detail({
     setSaving(true);
     setThroughError("");
     try {
-      const watched = await watchedThrough(
+      const plan = await planWatchedThrough(
         target,
         saved?.watched || [],
         ep,
@@ -1117,7 +1129,8 @@ function Detail({
       );
       await change(
         !saved || saved.status === "wish" ? "doing" : saved.status,
-        watched,
+        plan.watched,
+        [2, 6].includes(s.type ?? 0) ? plan.through : undefined,
       );
     } catch (error) {
       setThroughError(

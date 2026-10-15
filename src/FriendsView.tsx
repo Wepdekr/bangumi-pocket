@@ -13,7 +13,11 @@ import type { FriendEvent, TimelineSubject } from "./friends-api";
 import type { Subject, User } from "./types";
 import TimelineReactions from "./TimelineReactions";
 import { imageUrl } from "./images";
-import { collectionAction, batchProgressText } from "./timeline-text";
+import {
+  collectionAction,
+  batchProgressText,
+  progressAction,
+} from "./timeline-text";
 export default function FriendsView({
   account,
   connect,
@@ -211,7 +215,7 @@ function FriendCard({
         1: "更新了近况",
         2: "参与了资料编辑",
         3: collectionAction(event.type),
-        4: "更新了章节进度",
+        4: progressAction(event),
         5: "发布了近况",
         6: "发表了日志",
         7: "更新了目录",

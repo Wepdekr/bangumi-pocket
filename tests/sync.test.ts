@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SyncController } from "../src/sync";
 import { accountApi, accountRequest, AccountError } from "../src/account-api";
-import { watchedThrough } from "../src/episode-progress";
+import { watchedThrough, planWatchedThrough } from "../src/episode-progress";
 import { imageUrl } from "../src/images";
+import { batchProgressText, progressAction } from "../src/timeline-text";
+import type { FriendEvent } from "../src/friends-api";
 import type {
   RemoteCollection,
   Saved,
@@ -52,6 +54,7 @@ function harness(guest: Record<number, Saved> = {}) {
     episodes?: number[];
     watched?: boolean;
     review?: Review;
+    batch?: boolean;
   }[] = [];
   let offline = false,
     failSecondPage = false,
@@ -84,6 +87,31 @@ function harness(guest: Record<number, Saved> = {}) {
       guest = clone(library);
     },
     api: {
+      setEpisodeProgress: async (
+        token: string,
+        episodeId: number,
+        progress: { batch: true } | { type: 0 | 2 },
+      ) => {
+        online();
+        const batch = "batch" in progress;
+        const watched = batch || progress.type === 2;
+        if (!watched && failClear) throw new AccountError(0);
+        const user = uid(token);
+        const id = 1;
+        const row = accounts[user][id];
+        if (!row) throw new AccountError(400);
+        const episodes = batch
+          ? [101, 102, 103].filter((ep) => ep <= episodeId)
+          : [episodeId];
+        calls.push({ kind: "episodes", user, id, episodes, watched, batch });
+        const next = new Set(row.watched);
+        for (const ep of episodes) {
+          if (watched) next.add(ep);
+          else next.delete(ep);
+        }
+        row.watched = [...next];
+        row.ep_status = next.size;
+      },
       me: async (token: string) => {
         online();
         const id = uid(token);
@@ -307,7 +335,7 @@ test("Partial chapter success acknowledges only successful fields and retry resu
   assert.equal(c.getSnapshot().pending, 1);
   assert.deepEqual(h.accounts[1][1].watched, [101, 102]);
   const pending = JSON.parse(h.storage.get("account-library-v1:1")!).pending[1];
-  assert.deepEqual(pending.episodes, { "101": false });
+  assert.deepEqual(pending.progress, [{ episodeId: 101, type: 0 }]);
   h.failClear = false;
   await c.sync();
   assert.deepEqual(h.accounts[1][1].watched, [102]);
@@ -410,7 +438,7 @@ test("Failed chapter write retries chapters without repeating the successful rat
   const pending = JSON.parse(h.storage.get("account-library-v1:1")!).pending[1];
   assert.equal(pending.status, undefined);
   assert.equal(pending.review, undefined);
-  assert.deepEqual(pending.episodes, { "101": false });
+  assert.deepEqual(pending.progress, [{ episodeId: 101, type: 0 }]);
   h.failClear = false;
   await c.sync();
   assert.deepEqual(
@@ -496,6 +524,247 @@ test("Watched-through refuses incomplete or duplicate pages without modifying sa
     /异常/,
   );
   assert.deepEqual(watched, [9]);
+});
+
+test("Anime and live-action watched-through use one web batch operation and keep later watched episodes", async () => {
+  for (const type of [2, 6]) {
+    const h = harness();
+    h.accounts[1][1] = remote(1, 3, [102, 103]);
+    const c = h.create();
+    await c.initialize();
+    await c.connect("test-account-1");
+    await c.hydrate(1);
+    const chapters = [101, 102, 103].map((id) => ({
+      id,
+      sort: id - 100,
+      type: 0,
+      name: "",
+      name_cn: "",
+      airdate: "",
+    }));
+    const plan = await planWatchedThrough(
+      chapters[1],
+      [102, 103],
+      chapters,
+      3,
+      async () => {
+        throw new Error("Unexpected pagination");
+      },
+    );
+    assert.equal(
+      await c.save(
+        { ...subject(1), type },
+        "doing",
+        plan.watched,
+        undefined,
+        plan.through,
+      ),
+      true,
+    );
+    assert.deepEqual(
+      h.calls.map((call) => ({ episodes: call.episodes, batch: call.batch })),
+      [{ episodes: [101, 102], batch: true }],
+    );
+    assert.deepEqual(
+      new Set(h.accounts[1][1].watched),
+      new Set([101, 102, 103]),
+    );
+    assert.equal(h.accounts[1][1].rate, 9);
+    assert.equal(h.accounts[1][1].private, true);
+    assert.equal(c.getSnapshot().pending, 0);
+  }
+});
+
+test("Offline batch and subsequent single edits retain order across restart and partial success", async () => {
+  const h = harness();
+  h.accounts[1][1] = remote(1, 3, [103]);
+  const c = h.create();
+  await c.initialize();
+  await c.connect("test-account-1");
+  await c.hydrate(1);
+  h.offline = true;
+  assert.equal(
+    await c.save(subject(1), "doing", [103, 101, 102], undefined, {
+      episodeId: 102,
+      episodeIds: [101, 102],
+    }),
+    false,
+  );
+  assert.equal(await c.save(subject(1), "doing", [103, 102]), false);
+  const pending = JSON.parse(h.storage.get("account-library-v1:1")!).pending[1];
+  assert.deepEqual(pending.episodes, {});
+  assert.deepEqual(pending.progress, [
+    { episodeId: 102, episodeIds: [101, 102], batch: true },
+    { episodeId: 101, type: 0 },
+  ]);
+  h.offline = false;
+  h.failClear = true;
+  const restarted = h.create();
+  await restarted.initialize();
+  assert.equal(restarted.getSnapshot().pending, 1);
+  assert.deepEqual(new Set(h.accounts[1][1].watched), new Set([101, 102, 103]));
+  const cached = JSON.parse(h.storage.get("account-library-v1:1")!);
+  assert.deepEqual(cached.pending[1].progress, [{ episodeId: 101, type: 0 }]);
+  // A further batch must run after the pending uncheck, never before it.
+  assert.equal(
+    await restarted.save(subject(1), "doing", [103, 102, 101], undefined, {
+      episodeId: 101,
+      episodeIds: [101],
+    }),
+    false,
+  );
+  h.failClear = false;
+  assert.equal(await restarted.sync(), true);
+  assert.deepEqual(
+    h.calls.map((call) => [call.batch, call.episodes, call.watched]),
+    [
+      [true, [101, 102], true],
+      [false, [101], false],
+      [true, [101], true],
+    ],
+  );
+  assert.deepEqual(new Set(h.accounts[1][1].watched), new Set([101, 102, 103]));
+  assert.equal(restarted.getSnapshot().pending, 0);
+});
+
+test("Hydration overlays pending web batches and single edits; legacy pending edits remain supported", async () => {
+  const h = harness();
+  h.accounts[1][1] = remote(1, 3, [103]);
+  const c = h.create();
+  await c.initialize();
+  await c.connect("test-account-1");
+  const cache = JSON.parse(h.storage.get("account-library-v1:1")!);
+  cache.pending[1] = {
+    episodes: { 102: true },
+    progress: [
+      { episodeId: 102, episodeIds: [101, 102], batch: true },
+      { episodeId: 101, type: 0 },
+    ],
+  };
+  h.storage.set("account-library-v1:1", JSON.stringify(cache));
+  h.failClear = true;
+  // Block the legacy write so hydration must overlay the entire pending journal.
+  const legacy = h.deps.api.setEpisodes;
+  h.deps.api.setEpisodes = async () => {
+    throw new AccountError(0);
+  };
+  const restarted = h.create();
+  await restarted.initialize();
+  assert.equal(await restarted.hydrate(1), true);
+  assert.deepEqual(
+    new Set(restarted.getSnapshot().library[1].watched),
+    new Set([102, 103]),
+  );
+  h.deps.api.setEpisodes = legacy;
+  h.failClear = false;
+  assert.equal(await restarted.sync(), true);
+  assert.deepEqual(
+    h.calls.map((call) => [call.batch, call.episodes]),
+    [
+      [undefined, [102]],
+      [true, [101, 102]],
+      [false, [101]],
+    ],
+  );
+  assert.deepEqual(new Set(h.accounts[1][1].watched), new Set([102, 103]));
+});
+
+test("Web progress transport uses website payloads and keeps failed batches queued without v0 fallback", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: { url: string; body: unknown }[] = [];
+  let status = 200;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(init?.method, "PATCH");
+    assert.equal(init?.redirect, "error");
+    assert.equal(init?.credentials, "omit");
+    assert.equal(init?.cache, "no-store");
+    assert.equal(
+      new Headers(init?.headers).get("authorization"),
+      "Bearer test-account-1",
+    );
+    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    return new Response("{}", { status });
+  };
+  try {
+    await accountApi.setEpisodeProgress("test-account-1", 102, { batch: true });
+    await accountApi.setEpisodeProgress("test-account-1", 101, { type: 0 });
+    assert.deepEqual(requests, [
+      { url: "/account-api/collections/episodes/102", body: { batch: true } },
+      { url: "/account-api/collections/episodes/101", body: { type: 0 } },
+    ]);
+    for (const failure of [401, 403, 404, 429, 500]) {
+      status = failure;
+      const h = harness();
+      h.accounts[1][1] = remote(1, 3, [103]);
+      h.deps.api.setEpisodeProgress = accountApi.setEpisodeProgress;
+      const c = h.create();
+      await c.initialize();
+      await c.connect("test-account-1");
+      await c.hydrate(1);
+      const before = requests.length;
+      assert.equal(
+        await c.save(subject(1), "doing", [103, 101, 102], undefined, {
+          episodeId: 102,
+          episodeIds: [101, 102],
+        }),
+        false,
+      );
+      assert.equal(requests.length, before + 1);
+      assert.equal(h.calls.length, 0);
+      assert.equal(c.getSnapshot().pending, 1);
+      assert.deepEqual(c.getSnapshot().library[1].watched, [103, 101, 102]);
+      assert.match(
+        c.getSnapshot().error,
+        failure === 429
+          ? /频繁/
+          : failure === 401
+            ? /失效/
+            : failure === 403
+              ? /权限/
+              : /章节进度失败/,
+      );
+      status = 200;
+      assert.equal(await c.sync(), true);
+      assert.equal(c.getSnapshot().pending, 0);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Timeline distinguishes cumulative completion from single episode status without phantom volumes", () => {
+  const batch = {
+    subject: { ...subject(1), type: 2 },
+    epsUpdate: 2,
+    epsTotal: "12",
+    volsUpdate: 0,
+    volsTotal: "??",
+  };
+  const event = {
+    cat: 4,
+    type: 0,
+    memo: { progress: { batch } },
+  } as FriendEvent;
+  assert.equal(progressAction(event), "完成了");
+  assert.equal(batchProgressText(batch), "2 of 12 话");
+  assert.equal(batchProgressText({ ...batch, epsUpdate: 0 }), "0 of 12 话");
+  assert.equal(batchProgressText({ ...batch, epsTotal: "??" }), "2 话");
+  for (const [type, text] of [
+    [1, "想看"],
+    [2, "看过"],
+    [3, "抛弃"],
+  ] as const) {
+    assert.equal(
+      progressAction({
+        ...event,
+        type,
+        memo: {
+          progress: { single: { subject: subject(1), episode: { sort: 26 } } },
+        },
+      }),
+      text,
+    );
+  }
 });
 test("Legacy image addresses are upgraded without changing their paths or cache queries", () => {
   assert.equal(

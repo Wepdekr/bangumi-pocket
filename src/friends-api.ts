@@ -1,5 +1,6 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import type { Subject, User } from "./types";
+import { readPublicTimeline, mergePublicTimeline } from "./public-timeline";
 export type TimelineSubject = Pick<
   Subject,
   "id" | "name" | "type" | "images"
@@ -12,6 +13,8 @@ export type FriendEvent = {
   createdAt: number;
   replies: number;
   batch?: boolean;
+  // Already-decoded text from the original public timeline; render as plain text.
+  webSummary?: string;
   reactions?: TimelineReaction[];
   user?: User;
   memo: {
@@ -118,7 +121,7 @@ async function friendsRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.11.1 (Android; personal unofficial client)",
+            "BangumiPocket/0.11.2 (Android; personal unofficial client)",
         },
         disableRedirects: true,
         connectTimeout: 12000,
@@ -197,11 +200,24 @@ export async function readFriendsTimeline(
   const rows = until ? data.filter((row) => row.id < until) : data;
   const friendIDs = new Set(friends.friendlist);
   friendIDs.add(user.id);
-  const events = rows.filter((row) => friendIDs.has(row.uid));
+  let events = rows.filter((row) => friendIDs.has(row.uid));
   if (rows.length && !events.length)
     throw new Error("接口未返回好友范围的动态，请刷新或前往原站查看。");
+  let warning = "";
+  if (!until) {
+    try {
+      const original = await readPublicTimeline(user);
+      const boundary = rows.length
+        ? Math.min(...rows.map((event) => event.id))
+        : 0;
+      events = mergePublicTimeline(events, original, user.id, boundary);
+    } catch {
+      warning = "部分个人动态暂时无法核对，可稍后刷新或查看原站时间线。";
+    }
+  }
   return {
     events,
+    warning,
     cursor: rows.length ? Math.min(...rows.map((row) => row.id)) : undefined,
     hasMore: rows.length > 0,
   };

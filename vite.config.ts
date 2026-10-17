@@ -67,6 +67,13 @@ const accountProxy: Record<string, ProxyOptions> = {
     rewrite: (path) => path.replace(/^\/account-api/, "/p1"),
   },
 };
+const publicTimelineProxy: Record<string, ProxyOptions> = {
+  "/public-timeline": {
+    ...communityProxy["/community-api"],
+    target: "https://bgm.tv",
+    rewrite: (path) => path.replace(/^\/public-timeline/, ""),
+  },
+};
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -75,6 +82,7 @@ export default defineConfig({
       ...communityProxy,
       ...friendsProxy,
       ...accountProxy,
+      ...publicTimelineProxy,
       ...updateProxy,
     },
     watch: {
@@ -91,6 +99,7 @@ export default defineConfig({
       ...communityProxy,
       ...friendsProxy,
       ...accountProxy,
+      ...publicTimelineProxy,
       ...updateProxy,
     },
   },

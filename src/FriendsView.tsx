@@ -1,5 +1,5 @@
 import { displayText } from "./text";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
   LoaderCircle,
@@ -56,6 +56,7 @@ export default function FriendsView({
         <FriendFeed
           key={account.user.id}
           currentUser={account.user}
+          lastSync={account.lastSync}
           open={open}
           openWebsite={openWebsite}
         />
@@ -65,23 +66,29 @@ export default function FriendsView({
 }
 function FriendFeed({
   currentUser,
+  lastSync,
   open,
   openWebsite,
 }: {
   currentUser: User;
+  lastSync: number;
   open: (subject: Subject) => void;
   openWebsite: (url: string) => void;
 }) {
   const [events, setEvents] = useState<FriendEvent[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [warning, setWarning] = useState("");
   const [more, setMore] = useState(false);
   const [cursor, setCursor] = useState<number>();
   const [version, setVersion] = useState(0);
+  const generation = useRef(0);
   useEffect(() => {
+    generation.current++;
     let active = true;
     setBusy(true);
     setError("");
+    setWarning("");
     setEvents([]);
     setMore(false);
     syncController
@@ -89,6 +96,7 @@ function FriendFeed({
       .then((page) => {
         if (active) {
           setEvents(page.events);
+          setWarning(page.warning);
           setCursor(page.cursor);
           setMore(page.hasMore);
         }
@@ -102,13 +110,15 @@ function FriendFeed({
     return () => {
       active = false;
     };
-  }, [version]);
+  }, [version, lastSync]);
   async function loadMore() {
     if (busy || !events.length || !cursor) return;
     setBusy(true);
     setError("");
+    const requestedGeneration = generation.current;
     try {
       const page = await syncController.friendsTimeline(cursor);
+      if (requestedGeneration !== generation.current) return;
       const older = page.events;
       setEvents((old) => [
         ...new Map([...old, ...older].map((row) => [row.id, row])).values(),
@@ -116,11 +126,12 @@ function FriendFeed({
       setCursor(page.cursor);
       setMore(page.hasMore);
     } catch (error) {
+      if (requestedGeneration !== generation.current) return;
       setError(
         error instanceof Error ? error.message : "好友动态读取失败，请重试。",
       );
     } finally {
-      setBusy(false);
+      if (requestedGeneration === generation.current) setBusy(false);
     }
   }
   return (
@@ -176,7 +187,22 @@ function FriendFeed({
           </button>
         </div>
       )}
-      {!busy && !error && !events.length && (
+      {warning && (
+        <div className="account-hint" role="status">
+          <span>{warning}</span>
+          <button
+            className="text-button"
+            onClick={() =>
+              openWebsite(
+                `https://bgm.tv/user/${encodeURIComponent(currentUser.username)}/timeline`,
+              )
+            }
+          >
+            查看我的时间线 <ArrowUpRight size={14} />
+          </button>
+        </div>
+      )}
+      {!busy && !error && !warning && !events.length && (
         <p className="community-empty">
           你和好友暂时还没有动态，过一会儿再来看看吧。
         </p>
@@ -236,7 +262,11 @@ function FriendCard({
         alt=""
         loading="lazy"
       />
-      <strong>{displayText(item.nameCN || item.name)}</strong>
+      <strong>
+        {event.webSummary !== undefined
+          ? item.nameCN || item.name
+          : displayText(item.nameCN || item.name)}
+      </strong>
       <ArrowUpRight size={15} />
     </button>
   );
@@ -261,7 +291,7 @@ function FriendCard({
           </small>
         </div>
       </header>
-      <p className="friend-action">{label}</p>
+      <p className="friend-action">{event.webSummary ?? label}</p>
       {event.memo.subject?.map((item) => (
         <div key={item.subject.id}>
           {subject(item.subject)}
@@ -272,7 +302,11 @@ function FriendCard({
             </span>
           ) : null}
           {item.comment && (
-            <p className="community-content">{displayText(item.comment)}</p>
+            <p className="community-content">
+              {event.webSummary !== undefined
+                ? item.comment
+                : displayText(item.comment)}
+            </p>
           )}
         </div>
       ))}

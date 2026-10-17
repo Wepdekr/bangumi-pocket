@@ -17,6 +17,9 @@ let expired = false;
 let empty = false;
 let noFriends = false;
 let reactionFailure = false;
+let webExtra = false;
+let publicFailure = false;
+let publicRequests = 0;
 let reactions = [
   { value: 0, users: [{ id: 88, username: "friend", nickname: "我的好友" }] },
 ];
@@ -31,6 +34,22 @@ const own = {
   memo: { status: { tsukkomi: "我自己的动态" } },
 };
 page.on("pageerror", (error) => errors.push(error.message));
+await page.route("**/public-timeline/**", (route) => {
+  publicRequests++;
+  assert.equal(route.request().headers().authorization, undefined);
+  assert.equal(route.request().headers().cookie, undefined);
+  assert.equal(
+    new URL(route.request().url()).pathname,
+    "/public-timeline/user/tester/timeline",
+  );
+  if (publicFailure) return route.fulfill({ status: 503, body: "Unavailable" });
+  const row = (id, description, withSubject = false) =>
+    `<li id="tml_${id}"><span class="info_full">${description}${withSubject ? '<div class="card"><p class="title"><a href="https://bgm.tv/subject/9999">接口缺失作品</a></p></div>' : ""}<div class="post_actions date"><span title="2026-10-17 09:39">刚刚</span></div></span></li>`;
+  return route.fulfill({
+    contentType: "text/html",
+    body: `<h1><a href="/user/tester">测试账号</a></h1><div id="timeline"><ul>${empty ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "")}</ul></div>`,
+  });
+});
 await page.route("https://api.bgm.tv/**", (route) => {
   const path = new URL(route.request().url()).pathname;
   return route.fulfill({
@@ -248,6 +267,7 @@ try {
     .click();
   await page.getByText("好友的评价", { exact: true }).waitFor();
   await page.getByText("我的好友 & 同好", { exact: true }).first().waitFor();
+  assert.equal(publicRequests > 0, true);
   const labels = [
     "想读",
     "想看",
@@ -283,6 +303,37 @@ try {
   assert.doesNotMatch(await anime.innerText(), /卷数|\?\?/);
   await page.getByText("卷数：3 / 10", { exact: true }).waitFor();
   await page.getByText("卷数：2", { exact: true }).waitFor();
+  webExtra = true;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page
+    .getByText("完成了 接口缺失作品 2 of 12 话", { exact: true })
+    .waitFor();
+  await page.getByText("在看 接口缺失作品", { exact: true }).waitFor();
+  assert.match(
+    await page.locator(".friend-card").first().innerText(),
+    /完成了 接口缺失作品/,
+  );
+  assert.equal(
+    await page.getByText("我自己的动态", { exact: true }).count(),
+    1,
+    "Public rows must not duplicate API records",
+  );
+  assert.equal(
+    await page.getByText("重复的个人动态", { exact: true }).count(),
+    0,
+  );
+  publicFailure = true;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page
+    .getByText("部分个人动态暂时无法核对，可稍后刷新或查看原站时间线。", {
+      exact: true,
+    })
+    .waitFor();
+  await page.getByText("好友的评价", { exact: true }).waitFor();
+  publicFailure = false;
+  webExtra = false;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByText("好友的评价", { exact: true }).waitFor();
   await page.getByText("我自己的动态", { exact: true }).waitFor();
   const card = page.locator(".friend-card").filter({ hasText: "好友的评价" });
   await card.getByText("1 人互动", { exact: true }).waitFor();

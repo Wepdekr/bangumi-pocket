@@ -121,7 +121,7 @@ async function friendsRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.11.2 (Android; personal unofficial client)",
+            "BangumiPocket/0.12.0 (Android; personal unofficial client)",
         },
         disableRedirects: true,
         connectTimeout: 12000,
@@ -153,15 +153,67 @@ async function friendsRequest<T>(
     );
   }
   if (status === 401 || status === 403)
-    throw new Error(
-      "当前授权无法读取好友动态，请在收藏页更新官方个人令牌后重试。",
-    );
+    throw new Error("当前授权无法读取动态，请在收藏页更新官方个人令牌后重试。");
   if (status === 429) throw new Error("操作过于频繁，请稍后再试。");
   if (status < 200 || status >= 300)
     throw new Error(
       `动态${method === "GET" ? "读取" : "互动"}失败（${status}），请重试或前往原站。`,
     );
   return data as T;
+}
+
+function timelineRows(data: unknown): FriendEvent[] {
+  if (
+    !Array.isArray(data) ||
+    data.some(
+      (row) =>
+        !row ||
+        !Number.isSafeInteger(row.id) ||
+        row.id <= 0 ||
+        !Number.isSafeInteger(row.uid) ||
+        typeof row.createdAt !== "number" ||
+        !row.memo ||
+        typeof row.memo !== "object",
+    )
+  )
+    throw new Error("动态资料格式发生变化，请前往原站查看。");
+  return data as FriendEvent[];
+}
+
+export async function readUserTimeline(
+  token: string,
+  user: User,
+  until?: number,
+) {
+  const data = timelineRows(
+    await friendsRequest<unknown>(
+      token,
+      `/users/${encodeURIComponent(user.username)}/timeline?limit=20${until ? `&until=${until}` : ""}`,
+    ),
+  );
+  if (data.some((row) => row.uid !== user.id))
+    throw new Error("接口返回的时间线与用户不一致，请刷新重试。");
+  const rows = until ? data.filter((row) => row.id < until) : data;
+  let events = rows.map((row) => ({ ...row, user }));
+  let warning = "";
+  if (!until) {
+    try {
+      events = mergePublicTimeline(
+        events,
+        await readPublicTimeline(user),
+        user.id,
+        rows.length ? Math.min(...rows.map((row) => row.id)) : 0,
+      ).map((row) => ({ ...row, user }));
+    } catch {
+      warning = "部分近期动态暂时无法核对，可稍后刷新或查看原站时间线。";
+    }
+  }
+  return {
+    events,
+    warning,
+    cursor: rows.length ? Math.min(...rows.map((row) => row.id)) : undefined,
+    hasMore: rows.length > 0,
+  };
 }
 export async function readFriendsTimeline(
   token: string,
@@ -179,24 +231,13 @@ export async function readFriendsTimeline(
     friends.friendlist.some((id) => !Number.isInteger(id))
   )
     throw new Error("好友列表格式发生变化，请前往 Bangumi 原站查看。");
-  const data = await friendsRequest<FriendEvent[]>(
-    token,
-    // Official inbox falls back to GLOBAL when there are no friends.
-    `${friends.friendlist.length ? "/timeline?mode=friends&" : `/users/${encodeURIComponent(user.username)}/timeline?`}limit=20${until ? `&until=${until}` : ""}`,
+  const data = timelineRows(
+    await friendsRequest<unknown>(
+      token,
+      // Official inbox falls back to GLOBAL when there are no friends.
+      `${friends.friendlist.length ? "/timeline?mode=friends&" : `/users/${encodeURIComponent(user.username)}/timeline?`}limit=20${until ? `&until=${until}` : ""}`,
+    ),
   );
-  if (
-    !Array.isArray(data) ||
-    data.some(
-      (row) =>
-        !row ||
-        !Number.isInteger(row.id) ||
-        !Number.isInteger(row.uid) ||
-        typeof row.createdAt !== "number" ||
-        !row.memo ||
-        typeof row.memo !== "object",
-    )
-  )
-    throw new Error("动态资料格式发生变化，请前往 Bangumi 原站查看。");
   const rows = until ? data.filter((row) => row.id < until) : data;
   const friendIDs = new Set(friends.friendlist);
   friendIDs.add(user.id);

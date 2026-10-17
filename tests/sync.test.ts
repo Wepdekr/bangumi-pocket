@@ -39,6 +39,54 @@ const remote = (id: number, type = 3, watched: number[] = []) => ({
   watched,
 });
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+test("Personal timeline requests are authenticated, scoped, and rejected after an account switch", async () => {
+  const c = harness().create();
+  const user = { id: 88, username: "friend", nickname: "好友" };
+  await c.initialize();
+  await assert.rejects(c.userTimeline(user, 100), /请先连接/);
+  await c.connect("test-account-1");
+  const originalFetch = globalThis.fetch;
+  let release!: (response: Response) => void;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(
+      String(input),
+      "/friends-api/users/friend/timeline?limit=20&until=100",
+    );
+    assert.equal(
+      new Headers(init?.headers).get("authorization"),
+      "Bearer test-account-1",
+    );
+    assert.equal(init?.credentials, "omit");
+    return await new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+  };
+  try {
+    const request = c.userTimeline(user, 100);
+    const rejected = assert.rejects(request, /账号已切换/);
+    await c.connect("test-account-2");
+    release(
+      new Response(
+        JSON.stringify([
+          {
+            id: 99,
+            uid: 88,
+            createdAt: 1,
+            cat: 5,
+            type: 1,
+            memo: { status: { tsukkomi: "旧账号请求" } },
+          },
+        ]),
+      ),
+    );
+    await rejected;
+    assert.equal(c.getSnapshot().user?.id, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function harness(guest: Record<number, Saved> = {}) {
   const storage = new Map<string, string>();
   let session: Session | null = null;

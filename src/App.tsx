@@ -35,6 +35,10 @@ import ReviewSheet from "./ReviewSheet";
 import CommentsTab from "./CommentsTab";
 import RelationsTab from "./RelationsTab";
 import FriendsView from "./FriendsView";
+import UserTimeline, {
+  userTimelineRoute,
+  type UserTimelineRoute,
+} from "./UserTimeline";
 import { planWatchedThrough, type WatchThrough } from "./episode-progress";
 import { imageUrl } from "./images";
 import type { SyncState } from "./sync";
@@ -46,6 +50,7 @@ import type {
   Episode,
   Character,
   Review,
+  User,
 } from "./types";
 
 const categories = [
@@ -200,7 +205,12 @@ function Poster({
 }
 
 export default function App() {
-  const [tab, setTab] = useState("discover");
+  const [tab, setTab] = useState(() =>
+    userTimelineRoute(history.state) ? "friends" : "discover",
+  );
+  const [timelineRoute, setTimelineRoute] = useState<UserTimelineRoute | null>(
+    () => userTimelineRoute(history.state),
+  );
   const [type, setType] = useState(2);
   const [sort, setSort] = useState("rank");
   const account = useSyncExternalStore(
@@ -214,10 +224,27 @@ export default function App() {
   );
   useEffect(() => {
     void syncController.initialize();
-    const onHash = () => setSelected(Number(location.hash.slice(1)) || null);
+    const onHash = () => {
+      setSelected(Number(location.hash.slice(1)) || null);
+      setTimelineRoute(userTimelineRoute(history.state));
+    };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  useEffect(() => {
+    if (
+      !account.ready ||
+      !timelineRoute ||
+      timelineRoute.accountId === account.user?.id
+    )
+      return;
+    history.replaceState(
+      { ...history.state, userTimeline: undefined },
+      "",
+      selected ? `#${selected}` : location.pathname + location.search,
+    );
+    setTimelineRoute(null);
+  }, [account.ready, account.user?.id, timelineRoute, selected]);
   useEffect(() => {
     if (!ready || !account.user) return;
     const resume = () => {
@@ -287,7 +314,11 @@ export default function App() {
   );
   const calendar = useResource(api.calendar, [account.user?.id]);
   const open = (s: Subject) => {
-    history.pushState({ detail: true }, "", `#${s.id}`);
+    history.pushState(
+      { detail: true, userTimeline: timelineRoute || undefined },
+      "",
+      `#${s.id}`,
+    );
     setSelected(s.id);
   };
   const close = () => {
@@ -332,9 +363,28 @@ export default function App() {
     setTab(next);
     window.scrollTo({ top: 0 });
   };
+  const openTimeline = (user: User) => {
+    if (!account.user) return;
+    const route = { user, accountId: account.user.id };
+    history.pushState(
+      { userTimeline: route },
+      "",
+      `#timeline/${encodeURIComponent(user.username)}`,
+    );
+    setTimelineRoute(route);
+  };
+  const closeTimeline = () => {
+    if (userTimelineRoute(history.state)) history.back();
+    else setTimelineRoute(null);
+  };
+  const timeline =
+    account.user && timelineRoute?.accountId === account.user.id
+      ? timelineRoute.user
+      : null;
+  const overlay = Boolean(selected || timeline);
   return (
     <div className="app-shell">
-      <header className="app-header" inert={Boolean(selected)}>
+      <header className="app-header" inert={overlay}>
         <button
           className="brand"
           onClick={() => navigate("discover")}
@@ -355,7 +405,7 @@ export default function App() {
           <Search size={21} />
         </button>
       </header>
-      <main inert={Boolean(selected)}>
+      <main inert={overlay}>
         {tab === "discover" && (
           <>
             <div className="page-heading">
@@ -499,6 +549,7 @@ export default function App() {
             connect={() => navigate("library")}
             open={open}
             openWebsite={(url) => void openWebsite(url)}
+            openTimeline={openTimeline}
           />
         )}
         {tab === "library" && (
@@ -511,7 +562,7 @@ export default function App() {
           />
         )}
       </main>
-      <nav className="bottom-nav" aria-label="主导航" inert={Boolean(selected)}>
+      <nav className="bottom-nav" aria-label="主导航" inert={overlay}>
         {[
           { id: "discover", name: "发现", icon: Compass },
           { id: "calendar", name: "放送", icon: CalendarDays },
@@ -532,6 +583,18 @@ export default function App() {
           </button>
         ))}
       </nav>
+      {timeline && account.user && (
+        <UserTimeline
+          key={`${account.user.id}:${timeline.id}`}
+          user={timeline}
+          currentUser={account.user}
+          lastSync={account.lastSync}
+          covered={Boolean(selected)}
+          close={closeTimeline}
+          open={open}
+          openWebsite={(url) => void openWebsite(url)}
+        />
+      )}
       {selected && (
         <Detail
           key={selected}

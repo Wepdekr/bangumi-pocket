@@ -2,6 +2,7 @@ import { displayText } from "./text";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
+  ChevronRight,
   LoaderCircle,
   RefreshCw,
   Star,
@@ -23,11 +24,13 @@ export default function FriendsView({
   connect,
   open,
   openWebsite,
+  openTimeline,
 }: {
   account: SyncState;
   connect: () => void;
   open: (subject: Subject) => void;
   openWebsite: (url: string) => void;
+  openTimeline: (user: User) => void;
 }) {
   return (
     <>
@@ -59,21 +62,26 @@ export default function FriendsView({
           lastSync={account.lastSync}
           open={open}
           openWebsite={openWebsite}
+          openTimeline={openTimeline}
         />
       )}
     </>
   );
 }
-function FriendFeed({
+export function FriendFeed({
   currentUser,
   lastSync,
   open,
   openWebsite,
+  openTimeline,
+  targetUser,
 }: {
   currentUser: User;
   lastSync: number;
   open: (subject: Subject) => void;
   openWebsite: (url: string) => void;
+  openTimeline: (user: User) => void;
+  targetUser?: User;
 }) {
   const [events, setEvents] = useState<FriendEvent[]>([]);
   const [busy, setBusy] = useState(true);
@@ -91,8 +99,10 @@ function FriendFeed({
     setWarning("");
     setEvents([]);
     setMore(false);
-    syncController
-      .friendsTimeline()
+    (targetUser
+      ? syncController.userTimeline(targetUser)
+      : syncController.friendsTimeline()
+    )
       .then((page) => {
         if (active) {
           setEvents(page.events);
@@ -110,14 +120,16 @@ function FriendFeed({
     return () => {
       active = false;
     };
-  }, [version, lastSync]);
+  }, [version, lastSync, targetUser?.id, targetUser?.username]);
   async function loadMore() {
     if (busy || !events.length || !cursor) return;
     setBusy(true);
     setError("");
     const requestedGeneration = generation.current;
     try {
-      const page = await syncController.friendsTimeline(cursor);
+      const page = targetUser
+        ? await syncController.userTimeline(targetUser, cursor)
+        : await syncController.friendsTimeline(cursor);
       if (requestedGeneration !== generation.current) return;
       const older = page.events;
       setEvents((old) => [
@@ -135,9 +147,13 @@ function FriendFeed({
     }
   }
   return (
-    <section className="friends-feed" aria-label="好友动态" aria-busy={busy}>
+    <section
+      className="friends-feed"
+      aria-label={targetUser ? "用户时间线" : "好友动态"}
+      aria-busy={busy}
+    >
       <div className="friends-toolbar">
-        <strong>我与好友的动态</strong>
+        <strong>{targetUser ? "全部动态" : "我与好友的动态"}</strong>
         <button
           className="text-button"
           disabled={busy}
@@ -148,7 +164,13 @@ function FriendFeed({
         </button>
         <button
           className="text-button"
-          onClick={() => openWebsite("https://bgm.tv")}
+          onClick={() =>
+            openWebsite(
+              targetUser
+                ? `https://bgm.tv/user/${encodeURIComponent(targetUser.username)}/timeline`
+                : "https://bgm.tv",
+            )
+          }
         >
           原站 <ArrowUpRight size={14} />
         </button>
@@ -165,12 +187,14 @@ function FriendFeed({
           }
           open={open}
           openWebsite={openWebsite}
+          openTimeline={openTimeline}
+          showTimelineLink={!targetUser}
         />
       ))}
       {busy && (
         <p className="community-loading" role="status">
           <LoaderCircle className="spin" size={18} />
-          正在读取好友动态…
+          {targetUser ? "正在读取时间线…" : "正在读取好友动态…"}
         </p>
       )}
       {error && (
@@ -193,18 +217,27 @@ function FriendFeed({
           <button
             className="text-button"
             onClick={() =>
-              openWebsite(
-                `https://bgm.tv/user/${encodeURIComponent(currentUser.username)}/timeline`,
-              )
+              targetUser
+                ? openWebsite(
+                    `https://bgm.tv/user/${encodeURIComponent(targetUser.username)}/timeline`,
+                  )
+                : openTimeline(currentUser)
             }
           >
-            查看我的时间线 <ArrowUpRight size={14} />
+            {targetUser ? "查看原站" : "查看我的时间线"}{" "}
+            {targetUser ? (
+              <ArrowUpRight size={14} />
+            ) : (
+              <ChevronRight size={14} />
+            )}
           </button>
         </div>
       )}
       {!busy && !error && !warning && !events.length && (
         <p className="community-empty">
-          你和好友暂时还没有动态，过一会儿再来看看吧。
+          {targetUser
+            ? "还没有可显示的动态。"
+            : "你和好友暂时还没有动态，过一会儿再来看看吧。"}
         </p>
       )}
       {events.length > 0 && more && !error && (
@@ -228,12 +261,16 @@ function FriendCard({
   update,
   open,
   openWebsite,
+  openTimeline,
+  showTimelineLink,
 }: {
   event: FriendEvent;
   currentUser: User;
   update: (event: FriendEvent) => void;
   open: (subject: Subject) => void;
   openWebsite: (url: string) => void;
+  openTimeline: (user: User) => void;
+  showTimelineLink: boolean;
 }) {
   const label =
     (
@@ -355,17 +392,19 @@ function FriendCard({
         </button>
       )}
       <TimelineReactions event={event} user={currentUser} update={update} />
-      <button
-        className="text-button"
-        onClick={() =>
-          openWebsite(
-            `https://bgm.tv/user/${encodeURIComponent(username)}/timeline`,
-          )
-        }
-      >
-        {event.uid === currentUser.id ? "查看我的时间线" : "查看好友时间线"}{" "}
-        <ArrowUpRight size={14} />
-      </button>
+      {showTimelineLink && (
+        <button
+          className="text-button"
+          onClick={() =>
+            openTimeline(
+              author || { id: event.uid, username, nickname: username },
+            )
+          }
+        >
+          {event.uid === currentUser.id ? "查看我的时间线" : "查看好友时间线"}{" "}
+          <ChevronRight size={14} />
+        </button>
+      )}
     </article>
   );
 }

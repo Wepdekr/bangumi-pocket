@@ -20,6 +20,10 @@ let reactionFailure = false;
 let webExtra = false;
 let publicFailure = false;
 let publicRequests = 0;
+let personalEmpty = false;
+let personalFailure = false;
+let wrongUser = false;
+const personalRequests = [];
 let reactions = [
   { value: 0, users: [{ id: 88, username: "friend", nickname: "我的好友" }] },
 ];
@@ -38,16 +42,14 @@ await page.route("**/public-timeline/**", (route) => {
   publicRequests++;
   assert.equal(route.request().headers().authorization, undefined);
   assert.equal(route.request().headers().cookie, undefined);
-  assert.equal(
-    new URL(route.request().url()).pathname,
-    "/public-timeline/user/tester/timeline",
-  );
+  const username = new URL(route.request().url()).pathname.split("/")[3];
+  assert.ok(["tester", "friend"].includes(username));
   if (publicFailure) return route.fulfill({ status: 503, body: "Unavailable" });
   const row = (id, description, withSubject = false) =>
     `<li id="tml_${id}"><span class="info_full">${description}${withSubject ? '<div class="card"><p class="title"><a href="https://bgm.tv/subject/9999">接口缺失作品</a></p></div>' : ""}<div class="post_actions date"><span title="2026-10-17 09:39">刚刚</span></div></span></li>`;
   return route.fulfill({
     contentType: "text/html",
-    body: `<h1><a href="/user/tester">测试账号</a></h1><div id="timeline"><ul>${empty ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "")}</ul></div>`,
+    body: `<h1><a href="/user/${username}">测试账号</a></h1><div id="timeline"><ul>${empty || personalEmpty || username === "friend" ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "")}</ul></div>`,
   });
 });
 await page.route("https://api.bgm.tv/**", (route) => {
@@ -103,8 +105,50 @@ await page.route("**/friends-api/**", (route) => {
     return route.fulfill({
       json: { friendlist: empty || noFriends ? [] : [88] },
     });
-  if (url.pathname.includes("/users/tester/timeline"))
-    return route.fulfill({ json: empty ? [] : [own] });
+  if (/\/users\/(tester|friend)\/timeline$/.test(url.pathname)) {
+    personalRequests.push(url.pathname + url.search);
+    if (personalFailure) return route.fulfill({ status: 503, json: {} });
+    const isOwn = url.pathname.includes("/tester/");
+    const event = isOwn
+      ? own
+      : {
+          id: 10,
+          uid: wrongUser ? 77 : 88,
+          createdAt: 1700000000,
+          cat: 3,
+          type: 6,
+          replies: 0,
+          reactions,
+          memo: {
+            subject: [
+              {
+                subject: { ...s, nameCN: s.name_cn },
+                collectID: 456,
+                rate: 8,
+                comment: "好友个人时间线评价",
+              },
+            ],
+          },
+        };
+    return route.fulfill({
+      json:
+        empty || personalEmpty
+          ? []
+          : url.searchParams.has("until")
+            ? Number(url.searchParams.get("until")) > 5
+              ? [
+                  event,
+                  {
+                    ...own,
+                    id: 5,
+                    uid: isOwn ? 123 : 88,
+                    memo: { status: { tsukkomi: "更早的个人动态" } },
+                  },
+                ]
+              : []
+            : [event],
+    });
+  }
   assert.equal(
     url.searchParams.get("mode"),
     "friends",
@@ -428,11 +472,10 @@ try {
   await page.locator(".friends-toolbar").scrollIntoViewIfNeeded();
   await myCard.getByRole("button", { name: "发表情", exact: true }).click();
   assert.equal(
-    await myCard
-      .locator(".reaction-picker img")
-      .evaluateAll((images) =>
-        images.every((img) => img.complete && img.naturalWidth > 0),
-      ),
+    await myCard.locator(".reaction-picker img").evaluateAll(async (images) => {
+      await Promise.all(images.map((img) => img.decode().catch(() => {})));
+      return images.every((img) => img.complete && img.naturalWidth > 0);
+    }),
     true,
     "Bundled emoji must render",
   );
@@ -440,6 +483,141 @@ try {
   await page.locator(".friend-subject").first().click();
   await page.getByRole("dialog", { name: "作品详情", exact: true }).waitFor();
   await page.getByRole("button", { name: "返回", exact: true }).click();
+  // Personal timelines stay in the app and use the scoped user endpoint.
+  let popups = 0;
+  page.on("popup", () => popups++);
+  await myCard
+    .getByRole("button", { name: "查看我的时间线", exact: true })
+    .click();
+  const ownTimeline = page.getByRole("dialog", {
+    name: "我的时间线",
+    exact: true,
+  });
+  await ownTimeline.getByText("我自己的动态", { exact: true }).waitFor();
+  assert.match(personalRequests.at(-1), /\/users\/tester\/timeline\?limit=20$/);
+  assert.equal(
+    await ownTimeline.getByText("好友的评价", { exact: true }).count(),
+    0,
+  );
+  await ownTimeline
+    .getByRole("button", { name: "加载更多动态", exact: true })
+    .click();
+  await ownTimeline.getByText("更早的个人动态", { exact: true }).waitFor();
+  assert.match(personalRequests.at(-1), /until=12/);
+  assert.equal(
+    await ownTimeline.getByText("我自己的动态", { exact: true }).count(),
+    1,
+  );
+  await page.keyboard.press("Escape");
+  await ownTimeline.waitFor({ state: "detached" });
+  await card
+    .getByRole("button", { name: "查看好友时间线", exact: true })
+    .click();
+  const friendTimeline = page.getByRole("dialog", {
+    name: "我的好友 & 同好的时间线",
+    exact: true,
+  });
+  await friendTimeline
+    .getByText("好友个人时间线评价", { exact: true })
+    .waitFor();
+  assert.match(personalRequests.at(-1), /\/users\/friend\/timeline\?limit=20$/);
+  await friendTimeline
+    .locator(".timeline-profile")
+    .getByText("我的好友 & 同好", { exact: true })
+    .waitFor();
+  const personalCard = friendTimeline.locator(".friend-card").first();
+  await personalCard
+    .getByRole("button", { name: "表情 0，1 人", exact: true })
+    .click();
+  await personalCard
+    .getByRole("button", { name: "表情 0，2 人", exact: true })
+    .waitFor();
+  assert.equal(writes.at(-1).path, "/friends-api/subjects/-/collects/456/like");
+  await friendTimeline
+    .getByRole("button", { name: "加载更多动态", exact: true })
+    .click();
+  await friendTimeline.getByText("更早的个人动态", { exact: true }).waitFor();
+  assert.match(personalRequests.at(-1), /until=10/);
+  await friendTimeline
+    .getByRole("button", { name: "加载更多动态", exact: true })
+    .click();
+  await friendTimeline
+    .getByText("已经看到最早的动态了。", { exact: true })
+    .waitFor();
+  assert.equal(
+    await friendTimeline
+      .getByText("好友个人时间线评价", { exact: true })
+      .count(),
+    1,
+  );
+  await friendTimeline
+    .locator(".friend-subject")
+    .first()
+    .scrollIntoViewIfNeeded();
+  const scrollBefore = await friendTimeline.evaluate((el) => el.scrollTop);
+  await friendTimeline.locator(".friend-subject").first().click();
+  await page.getByRole("dialog", { name: "作品详情", exact: true }).waitFor();
+  assert.equal(await page.locator(".user-timeline").getAttribute("inert"), "");
+  await page.getByRole("button", { name: "返回", exact: true }).click();
+  await friendTimeline.waitFor();
+  assert.equal(
+    await friendTimeline.evaluate((el) => el.scrollTop),
+    scrollBefore,
+  );
+  await friendTimeline.getByText("更早的个人动态", { exact: true }).waitFor();
+  personalFailure = true;
+  await friendTimeline
+    .getByRole("button", { name: "刷新", exact: true })
+    .click();
+  await friendTimeline.getByRole("alert").waitFor();
+  personalFailure = false;
+  wrongUser = true;
+  await friendTimeline
+    .getByRole("button", { name: "重试", exact: true })
+    .click();
+  await friendTimeline
+    .getByRole("alert")
+    .filter({ hasText: "接口返回的时间线与用户不一致，请刷新重试。" })
+    .waitFor();
+  assert.equal(await friendTimeline.locator(".friend-card").count(), 0);
+  wrongUser = false;
+  personalEmpty = true;
+  await friendTimeline
+    .getByRole("button", { name: "重试", exact: true })
+    .click();
+  await friendTimeline
+    .getByText("还没有可显示的动态。", { exact: true })
+    .waitFor();
+  personalEmpty = false;
+  await friendTimeline
+    .getByRole("button", { name: "刷新", exact: true })
+    .click();
+  await friendTimeline
+    .getByText("好友个人时间线评价", { exact: true })
+    .waitFor();
+  await page.setViewportSize({ width: 320, height: 740 });
+  assert.equal(
+    await friendTimeline.evaluate((el) => el.scrollWidth > el.clientWidth),
+    false,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fs.mkdir("artifacts", { recursive: true });
+  await page.screenshot({ path: "artifacts/mobile-user-timeline.png" });
+  await page.goBack();
+  await friendTimeline.waitFor({ state: "detached" });
+  await page.goForward();
+  await friendTimeline
+    .getByText("好友个人时间线评价", { exact: true })
+    .waitFor();
+  assert.equal(
+    popups,
+    0,
+    "Timeline and subject navigation must stay inside the app",
+  );
+  await friendTimeline
+    .getByRole("button", { name: "返回动态", exact: true })
+    .click();
+  await friendTimeline.waitFor({ state: "detached" });
   expired = true;
   await page.getByRole("button", { name: "刷新", exact: true }).click();
   await page.getByRole("alert").waitFor();
@@ -458,11 +636,23 @@ try {
   await page
     .getByText("你和好友暂时还没有动态，过一会儿再来看看吧。", { exact: true })
     .waitFor();
-  await page
-    .locator(".bottom-nav")
-    .getByRole("button", { name: "收藏", exact: true })
+  empty = false;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await myCard
+    .getByRole("button", { name: "查看我的时间线", exact: true })
     .click();
-  await page.getByRole("button", { name: "退出", exact: true }).click();
+  await ownTimeline.getByText("我自己的动态", { exact: true }).waitFor();
+  await page.evaluate(async () => {
+    const { syncController } = await import("/src/sync.ts");
+    await syncController.disconnect();
+  });
+  await ownTimeline.waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => location.hash), "");
+  await page.goBack();
+  await page
+    .getByRole("button", { name: "连接 Bangumi 账号", exact: true })
+    .waitFor();
+  assert.equal(await page.locator(".user-timeline").count(), 0);
   await page
     .locator(".bottom-nav")
     .getByRole("button", { name: "动态", exact: true })
@@ -478,7 +668,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: own and friend activity, own-only feed without friends, official emoji assets, reaction add/switch/remove/counts/failure, authenticated pagination, mobile layout and logout isolation.",
+    "PASS: own/friend feed and in-app personal timelines, scoped pagination, identity validation, emoji interactions, retry/empty states, narrow layout, nested subject back navigation and history, logout isolation.",
   );
 } finally {
   await browser.close();

@@ -1306,6 +1306,47 @@ main {
   gap: 18px;
   margin-bottom: 20px;
 }
+.user-timeline {
+  z-index: 25;
+}
+.user-timeline-body {
+  padding: 20px 24px max(32px, env(safe-area-inset-bottom, 0px));
+}
+.timeline-profile {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 30px;
+}
+.timeline-profile img,
+.timeline-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  background: #f8e8ed;
+  color: var(--pink);
+  flex-shrink: 0;
+}
+.timeline-avatar {
+  display: grid;
+  place-items: center;
+}
+.timeline-profile > div {
+  min-width: 0;
+}
+.timeline-profile h1 {
+  font-size: 23px;
+  overflow-wrap: anywhere;
+}
+.timeline-profile p {
+  margin-top: 6px;
+  color: #a19399;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.timeline-header-spacer {
+  width: 40px;
+}
 .friends-toolbar strong {
   flex: 1;
   font-size: 15px;

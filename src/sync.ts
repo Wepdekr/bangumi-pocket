@@ -2,7 +2,11 @@ import { Preferences } from "@capacitor/preferences";
 import { accountApi, remoteToStatus } from "./account-api";
 import { readLibrary, writeLibrary, setPublicAccount } from "./api";
 import { sessionVault } from "./vault";
-import { readFriendsTimeline, setTimelineReaction } from "./friends-api";
+import {
+  readFriendsTimeline,
+  readUserTimeline,
+  setTimelineReaction,
+} from "./friends-api";
 import type { FriendEvent } from "./friends-api";
 import type { Saved, Session, Subject, User, Review } from "./types";
 import type { WatchThrough } from "./episode-progress";
@@ -86,6 +90,14 @@ export class SyncController {
   private scheduledSync: Promise<boolean> | null = null;
   constructor(private deps: Dependencies = defaults) {}
   getSnapshot = () => this.state;
+  userTimeline = async (user: User, until?: number) => {
+    const session = this.session;
+    if (!session) throw new Error("请先连接 Bangumi 账号。");
+    const page = await readUserTimeline(session.token, user, until);
+    if (this.session !== session)
+      throw new Error("账号已切换，请重新读取时间线。");
+    return page;
+  };
   friendsTimeline = async (until?: number) => {
     const session = this.session;
     if (!session) throw new Error("请先连接 Bangumi 账号。");

@@ -46,7 +46,7 @@ await build({
         return {events:[window.writeComplete?event(20,"同步后的新动态"):event(10,"修改前的动态")],cursor:10,hasMore:true,warning:""};
       };
       const root = createRoot(document.getElementById("root"));
-      window.renderSyncedAccount = lastSync => root.render(<FriendsView account={{ready:true,user,lastSync}} connect={()=>{}} open={()=>{}} openWebsite={()=>{}}/>);
+      window.renderSyncedAccount = lastSync => root.render(<FriendsView account={{ready:true,user,lastSync}} connect={()=>{}} open={()=>{}} openWebsite={()=>{}} openTimeline={()=>{}}/>);
       window.renderSyncedAccount(1);`,
     resolveDir: process.cwd(),
     loader: "tsx",

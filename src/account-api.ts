@@ -40,6 +40,8 @@ export const remoteToStatus: Record<number, Saved["status"]> = {
   4: "hold",
   5: "dropped",
 };
+class AccountResponseError extends Error {}
+
 export async function accountRequest<T>(
   token: string,
   path: string,
@@ -81,24 +83,39 @@ export async function accountRequest<T>(
   const checked = (data: unknown): T => {
     // Legacy endpoints report authorization/write failures inside HTTP 200 JSON.
     if (service === "legacy") {
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data);
+        } catch {
+          throw new AccountResponseError(
+            "章节提交返回格式异常，结果尚未确认。请先核对原站进度。",
+          );
+        }
+      }
       if (!data || typeof data !== "object" || Array.isArray(data))
-        throw new AccountError(500, operation);
+        throw new AccountResponseError(
+          "章节提交返回格式异常，结果尚未确认。请先核对原站进度。",
+        );
       const result = data as {
         code?: number;
         error?: unknown;
         status?: string;
       };
-      if (
-        (typeof result.code === "number" && result.code >= 400) ||
-        result.error ||
-        result.status === "error"
-      )
-        throw new AccountError(
-          typeof result.code === "number" && result.code >= 400
-            ? result.code
-            : 500,
-          operation,
-        );
+      // The field named `error` is a status description, including on success.
+      // Official legacy StatusCode: 200 OK, 202 Accepted, 304 Not Modified.
+      if ([200, 202, 304].includes(result.code ?? -1)) return data as T;
+      if (typeof result.code === "number" && result.code >= 400) {
+        const code =
+          result.code === 40001
+            ? 404
+            : [40101, 40102].includes(result.code)
+              ? 401
+              : result.code;
+        throw new AccountError(code, operation);
+      }
+      throw new AccountResponseError(
+        "章节提交未返回可确认的业务状态，请先核对原站进度后重试。",
+      );
     }
     return data as T;
   };
@@ -110,7 +127,7 @@ export async function accountRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.12.1 (Android; personal unofficial client)",
+            "BangumiPocket/0.12.2 (Android; personal unofficial client)",
         },
         data: payload,
         connectTimeout: 12000,
@@ -119,13 +136,7 @@ export async function accountRequest<T>(
       });
       if (response.status < 200 || response.status >= 300)
         throw new AccountError(response.status, operation);
-      return checked(
-        response.status === 204
-          ? undefined
-          : service === "legacy" && typeof response.data === "string"
-            ? JSON.parse(response.data)
-            : response.data,
-      );
+      return checked(response.status === 204 ? undefined : response.data);
     }
     const response = await fetch(url, {
       method,
@@ -142,9 +153,16 @@ export async function accountRequest<T>(
       redirect: "error",
     });
     if (!response.ok) throw new AccountError(response.status, operation);
-    return checked(response.status === 204 ? undefined : await response.json());
+    return checked(
+      response.status === 204
+        ? undefined
+        : service === "legacy"
+          ? await response.text()
+          : await response.json(),
+    );
   } catch (error) {
-    if (error instanceof AccountError) throw error;
+    if (error instanceof AccountError || error instanceof AccountResponseError)
+      throw error;
     throw new AccountError(0);
   }
 }
@@ -166,7 +184,7 @@ export const accountApi = {
         throw new Error("批量章节资料异常，请重新加载后重试。");
       return accountRequest<void>(
         token,
-        `/ep/${episodeId}/status/watched`,
+        `/ep/${episodeId}/status/watched?${new URLSearchParams({ ep_id: ids.join(",") })}`,
         "POST",
         { ep_id: ids.join(",") },
         "legacy",

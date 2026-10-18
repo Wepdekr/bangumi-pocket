@@ -36,7 +36,7 @@ if (!process.exitCode) {
           }));
           build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export const Capacitor = {isNativePlatform:()=>true}; export const CapacitorHttp = {request:async options => {globalThis.progressNativeRequests.push(options);return {status:globalThis.progressNativeStatus,data:globalThis.progressNativeData??{status:'ok'}};}};",
+              "export const Capacitor = {isNativePlatform:()=>true}; export const CapacitorHttp = {request:async options => {globalThis.progressNativeRequests.push(options);return {status:globalThis.progressNativeStatus,data:globalThis.progressNativeData??{code:202,error:'Accepted'}};}};",
           }));
         },
       },
@@ -54,7 +54,10 @@ if (!process.exitCode) {
     });
     await accountApi.setEpisodeProgress("native-test-token", 101, { type: 0 });
     const [batch, single] = globalThis.progressNativeRequests;
-    assert.equal(batch.url, "https://api.bgm.tv/ep/102/status/watched");
+    assert.equal(
+      batch.url,
+      "https://api.bgm.tv/ep/102/status/watched?ep_id=101%2C102",
+    );
     assert.equal(batch.method, "POST");
     assert.equal(batch.data, "ep_id=101%2C102");
     assert.equal(
@@ -87,13 +90,30 @@ if (!process.exitCode) {
       }),
       (error) => error instanceof AccountError && error.status === 401,
     );
-    globalThis.progressNativeData = JSON.stringify({ status: "ok" });
+    globalThis.progressNativeData = JSON.stringify({ code: 200, error: "OK" });
     await accountApi.setEpisodeProgress("native-test-token", 102, {
       batch: true,
       episodeIds: [101, 102],
     });
+    globalThis.progressNativeData = { code: 304, error: "Not Modified" };
+    await accountApi.setEpisodeProgress("native-test-token", 102, {
+      batch: true,
+      episodeIds: [101, 102],
+    });
+    for (const invalid of [{}, [], "<html>unexpected response</html>"]) {
+      globalThis.progressNativeData = invalid;
+      await assert.rejects(
+        accountApi.setEpisodeProgress("native-test-token", 102, {
+          batch: true,
+          episodeIds: [101, 102],
+        }),
+        (error) =>
+          !(error instanceof AccountError) &&
+          /未确认|未返回可确认/.test(error.message),
+      );
+    }
     console.log(
-      "PASS: Android batch submits exact IDs as a form, single updates retain their endpoint, legacy HTTP-200 errors are rejected, redirects remain disabled.",
+      "PASS: Android query IDs and form agree, official success descriptions are accepted, HTTP-200 failures are rejected, malformed responses do not fabricate 500, redirects remain disabled.",
     );
   } finally {
     delete globalThis.progressNativeRequests;

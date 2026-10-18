@@ -58,7 +58,8 @@ npm run android:build
 接口参考：[Bangumi API](https://bangumi.github.io/api/)、[新站接口文档](https://bangumi.github.io/dev-docs/)与[公开 API 源码](https://github.com/bangumi/server)。新站接口及实验性搜索接口可能变化，调整前应核对官方实现。
 
 - 普通内容与收藏主要使用 `api.bgm.tv`；Android 使用原生 HTTP 请求。
-- 动画与三次元的单集操作使用 `next.bgm.tv/p1/collections/episodes/{episodeID}`，提交 `type`。「看到这里」向 `api.bgm.tv/ep/{episodeID}/status/watched` 发送表单 `ep_id=章节ID列表`，与原站脚本的显式列表语义一致；不再向新站发送 `batch: true` 让其自行查询章节。该旧版接口可能在 HTTP 200 响应体中返回错误码，必须核对后再确认同步成功。
+- 动画与三次元的单集操作使用 `next.bgm.tv/p1/collections/episodes/{episodeID}`，提交 `type`。「看到这里」向 `api.bgm.tv/ep/{episodeID}/status/watched?ep_id=章节ID列表` 发送 POST，查询参数与表单均携带相同 ID，不再让新站按序号自行查询章节。官方历史规范将批量 `ep_id` 定义为 query 参数；只发 form 不能视为等价。
+- 旧版接口的 HTTP 状态与业务状态不同，`error` 是状态说明，成功时也可能为 `OK`、`Accepted` 或 `Not Modified`。仅按业务 `code=200/202/304` 确认成功；401 等真实业务失败保留队列，缺失或畸形响应显示结果未确认，不伪造服务器 500。规范依据：[官方历史 OpenAPI](https://github.com/bangumi/api/blob/8da01e33f371030dd1e16222dbec7c59a5282daf/open-api/api.yml)。
 - 离线章节操作按顺序持久化，成功后逐项确认；旧版待同步章节记录中已保存的 ID 列表继续使用。批量接口失败时不改用其他写入方式，保留操作等待重试。
 - 收藏状态与评分、短评在同一请求中提交，确保收藏动态包含评价。仅编辑评价时也携带当前收藏状态。
 - 拉取账号收藏使用 `/v0/me` 返回的 `username`。完整拉取成功后才替换本机缓存，避免中途失败导致片单缺失。

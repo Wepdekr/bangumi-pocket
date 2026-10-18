@@ -760,6 +760,7 @@ test("Progress transport sends original-site chapter IDs and retains failed batc
   const originalFetch = globalThis.fetch;
   const requests: { url: string; body: unknown }[] = [];
   let status = 200;
+  let businessCode = 202;
   globalThis.fetch = async (input, init) => {
     const legacy = String(input).startsWith("/legacy-account-api/");
     assert.equal(init?.method, legacy ? "POST" : "PATCH");
@@ -776,7 +777,22 @@ test("Progress transport sends original-site chapter IDs and retains failed batc
         ? Object.fromEntries(new URLSearchParams(String(init?.body)))
         : JSON.parse(String(init?.body)),
     });
-    return new Response("{}", { status });
+    return new Response(
+      JSON.stringify(
+        legacy
+          ? {
+              code: businessCode,
+              error:
+                businessCode === 202
+                  ? "Accepted"
+                  : businessCode === 200
+                    ? "OK"
+                    : "Not Modified",
+            }
+          : {},
+      ),
+      { status },
+    );
   };
   try {
     await accountApi.setEpisodeProgress("test-account-1", 102, {
@@ -786,11 +802,33 @@ test("Progress transport sends original-site chapter IDs and retains failed batc
     await accountApi.setEpisodeProgress("test-account-1", 101, { type: 0 });
     assert.deepEqual(requests, [
       {
-        url: "/legacy-account-api/ep/102/status/watched",
+        url: "/legacy-account-api/ep/102/status/watched?ep_id=101%2C102",
         body: { ep_id: "101,102" },
       },
       { url: "/account-api/collections/episodes/101", body: { type: 0 } },
     ]);
+    for (const success of [200, 202, 304]) {
+      businessCode = success;
+      await accountApi.setEpisodeProgress("test-account-1", 102, {
+        batch: true,
+        episodeIds: [101, 102],
+      });
+    }
+    businessCode = 202;
+    for (const failure of [401, 403, 404, 429, 500, 40001, 40101]) {
+      businessCode = failure;
+      await assert.rejects(
+        accountApi.setEpisodeProgress("test-account-1", 102, {
+          batch: true,
+          episodeIds: [101, 102],
+        }),
+        (error) =>
+          error instanceof AccountError &&
+          error.status ===
+            (failure === 40001 ? 404 : failure === 40101 ? 401 : failure),
+      );
+    }
+    businessCode = 202;
     for (const failure of [401, 403, 404, 429, 500]) {
       status = failure;
       const h = harness();

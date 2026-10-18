@@ -34,25 +34,35 @@ const watched = new Set([1001]);
 const writes = [];
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
-await page.route("**/legacy-account-api/ep/*/status/watched", async (route) => {
-  const request = route.request();
-  assert.equal(request.method(), "POST");
-  assert.equal(request.headers().authorization, "Bearer test-ui-account");
-  if (offline) return route.abort();
-  if (expired)
-    return route.fulfill({ json: { code: 401, error: "Unauthorized" } });
-  const ids = new URLSearchParams(request.postData())
-    .get("ep_id")
-    .split(",")
-    .map(Number);
-  assert.ok(
-    ids.every((id) => [1001, 1002].includes(id)),
-    "Do not let the server select hidden chapters",
-  );
-  for (const id of ids) watched.add(id);
-  writes.push({ kind: "legacy-progress", ids });
-  return route.fulfill({ json: { status: "ok" } });
-});
+await page.route(
+  "**/legacy-account-api/ep/*/status/watched*",
+  async (route) => {
+    const request = route.request();
+    assert.equal(request.method(), "POST");
+    assert.equal(request.headers().authorization, "Bearer test-ui-account");
+    if (offline) return route.abort();
+    if (expired)
+      return route.fulfill({ json: { code: 401, error: "Unauthorized" } });
+    // The documented legacy parameter is in query, not the form body.
+    const ids = new URL(request.url()).searchParams
+      .get("ep_id")
+      .split(",")
+      .map(Number);
+    assert.ok(
+      ids.every((id) => [1001, 1002].includes(id)),
+      "Do not let the server select hidden chapters",
+    );
+    for (const id of ids) watched.add(id);
+    writes.push({ kind: "legacy-progress", ids });
+    return route.fulfill({
+      json: {
+        request: new URL(request.url()).pathname,
+        code: 202,
+        error: "Accepted",
+      },
+    });
+  },
+);
 await page.route("**/account-api/collections/episodes/*", async (route) => {
   const request = route.request();
   assert.equal(request.headers().authorization, "Bearer test-ui-account");
@@ -269,6 +279,18 @@ try {
   await review.waitFor({ state: "detached" });
   assert.equal(cloud.type, 2);
   assert.equal(writes.filter((w) => w.kind === "legacy-progress").length, 2);
+  await page.evaluate(async () => {
+    const { syncController } = await import("/src/sync.ts");
+    if (syncController.getSnapshot().pending)
+      throw new Error("Successful batch still queued");
+    await syncController.sync();
+    await syncController.sync();
+  });
+  assert.equal(
+    writes.filter((w) => w.kind === "legacy-progress").length,
+    2,
+    "Accepted writes must not repeat on subsequent syncs",
+  );
   await page
     .getByRole("dialog", { name: "作品详情", exact: true })
     .getByRole("button", { name: "看过", exact: true })

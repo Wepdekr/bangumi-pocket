@@ -4,7 +4,11 @@ import { SyncController } from "../src/sync";
 import { accountApi, accountRequest, AccountError } from "../src/account-api";
 import { watchedThrough, planWatchedThrough } from "../src/episode-progress";
 import { imageUrl } from "../src/images";
-import { batchProgressText, progressAction } from "../src/timeline-text";
+import {
+  batchProgressText,
+  progressAction,
+  hasInvalidTimelineProgress,
+} from "../src/timeline-text";
 import type { FriendEvent } from "../src/friends-api";
 import type {
   RemoteCollection,
@@ -138,7 +142,7 @@ function harness(guest: Record<number, Saved> = {}) {
       setEpisodeProgress: async (
         token: string,
         episodeId: number,
-        progress: { batch: true } | { type: 0 | 2 },
+        progress: { batch: true; episodeIds: number[] } | { type: 0 | 2 },
       ) => {
         online();
         const batch = "batch" in progress;
@@ -148,9 +152,7 @@ function harness(guest: Record<number, Saved> = {}) {
         const id = 1;
         const row = accounts[user][id];
         if (!row) throw new AccountError(400);
-        const episodes = batch
-          ? [101, 102, 103].filter((ep) => ep <= episodeId)
-          : [episodeId];
+        const episodes = batch ? progress.episodeIds : [episodeId];
         calls.push({ kind: "episodes", user, id, episodes, watched, batch });
         const next = new Set(row.watched);
         for (const ep of episodes) {
@@ -675,6 +677,43 @@ test("Offline batch and subsequent single edits retain order across restart and 
   assert.equal(restarted.getSnapshot().pending, 0);
 });
 
+test("Repeated watched-through submits exact chapters and retains queued operation order", async () => {
+  const h = harness();
+  h.accounts[1][1] = remote(1, 3, [101, 102, 103]);
+  // Model the upstream's inflated aggregate while real main episodes are complete.
+  h.accounts[1][1].ep_status = 7;
+  const c = h.create();
+  await c.initialize();
+  await c.connect("test-account-1");
+  await c.hydrate(1);
+  const through = { episodeId: 102, episodeIds: [101, 102] };
+  await c.save(subject(1), "doing", [101, 102, 103], undefined, through);
+  assert.equal(
+    h.calls.length,
+    1,
+    "An explicit repeat can repair the remote aggregate and re-enter completion",
+  );
+  assert.deepEqual(h.accounts[1][1].watched, [101, 102, 103]);
+  await c.hydrate(1);
+  h.offline = true;
+  await c.save(subject(1), "doing", [102, 103]);
+  await c.save(subject(1), "doing", [101, 102, 103], undefined, through);
+  const pendingBefore = JSON.parse(h.storage.get("account-library-v1:1")!)
+    .pending[1].progress;
+  await c.save(subject(1), "doing", [101, 102, 103], undefined, through);
+  const pendingAfter = JSON.parse(h.storage.get("account-library-v1:1")!)
+    .pending[1].progress;
+  assert.deepEqual(
+    pendingAfter.slice(0, -1),
+    pendingBefore,
+    "Repeating must append after the existing uncheck/batch retry",
+  );
+  h.offline = false;
+  assert.equal(await c.sync(), true);
+  assert.deepEqual(new Set(h.accounts[1][1].watched), new Set([101, 102, 103]));
+  assert.equal(c.getSnapshot().pending, 0);
+});
+
 test("Hydration overlays pending web batches and single edits; legacy pending edits remain supported", async () => {
   const h = harness();
   h.accounts[1][1] = remote(1, 3, [103]);
@@ -717,12 +756,13 @@ test("Hydration overlays pending web batches and single edits; legacy pending ed
   assert.deepEqual(new Set(h.accounts[1][1].watched), new Set([102, 103]));
 });
 
-test("Web progress transport uses website payloads and keeps failed batches queued without v0 fallback", async () => {
+test("Progress transport sends original-site chapter IDs and retains failed batches without unsafe fallback", async () => {
   const originalFetch = globalThis.fetch;
   const requests: { url: string; body: unknown }[] = [];
   let status = 200;
   globalThis.fetch = async (input, init) => {
-    assert.equal(init?.method, "PATCH");
+    const legacy = String(input).startsWith("/legacy-account-api/");
+    assert.equal(init?.method, legacy ? "POST" : "PATCH");
     assert.equal(init?.redirect, "error");
     assert.equal(init?.credentials, "omit");
     assert.equal(init?.cache, "no-store");
@@ -730,14 +770,25 @@ test("Web progress transport uses website payloads and keeps failed batches queu
       new Headers(init?.headers).get("authorization"),
       "Bearer test-account-1",
     );
-    requests.push({ url: String(input), body: JSON.parse(String(init?.body)) });
+    requests.push({
+      url: String(input),
+      body: legacy
+        ? Object.fromEntries(new URLSearchParams(String(init?.body)))
+        : JSON.parse(String(init?.body)),
+    });
     return new Response("{}", { status });
   };
   try {
-    await accountApi.setEpisodeProgress("test-account-1", 102, { batch: true });
+    await accountApi.setEpisodeProgress("test-account-1", 102, {
+      batch: true,
+      episodeIds: [101, 102],
+    });
     await accountApi.setEpisodeProgress("test-account-1", 101, { type: 0 });
     assert.deepEqual(requests, [
-      { url: "/account-api/collections/episodes/102", body: { batch: true } },
+      {
+        url: "/legacy-account-api/ep/102/status/watched",
+        body: { ep_id: "101,102" },
+      },
       { url: "/account-api/collections/episodes/101", body: { type: 0 } },
     ]);
     for (const failure of [401, 403, 404, 429, 500]) {
@@ -813,6 +864,50 @@ test("Timeline distinguishes cumulative completion from single episode status wi
       text,
     );
   }
+});
+
+test("Invalid cumulative counts are flagged without inventing a corrected historical count", () => {
+  const batch = {
+    subject: { ...subject(1), type: 2 },
+    epsUpdate: 12,
+    epsTotal: "8",
+  };
+  const event = {
+    cat: 4,
+    type: 0,
+    memo: { progress: { batch } },
+  } as FriendEvent;
+  assert.equal(hasInvalidTimelineProgress(event), true);
+  assert.equal(progressAction(event), "更新了章节进度");
+  assert.equal(
+    batchProgressText(batch),
+    "原站进度计数异常，暂无法确认已看数量。",
+  );
+  assert.equal(
+    batch.epsUpdate,
+    12,
+    "Keep raw historical data, never silently clamp to 8",
+  );
+  assert.equal(batchProgressText({ ...batch, epsUpdate: 8 }), "8 of 8 话");
+  assert.equal(batchProgressText({ ...batch, epsTotal: "??" }), "12 话");
+  for (const count of [-1, 0.5, Infinity, NaN]) {
+    assert.equal(
+      hasInvalidTimelineProgress({
+        ...event,
+        memo: { progress: { batch: { ...batch, epsUpdate: count } } },
+      }),
+      true,
+    );
+  }
+  assert.equal(
+    hasInvalidTimelineProgress({
+      ...event,
+      memo: {
+        progress: { batch: { ...batch, subject: { ...subject(1), type: 6 } } },
+      },
+    }),
+    true,
+  );
 });
 test("Legacy image addresses are upgraded without changing their paths or cache queries", () => {
   assert.equal(

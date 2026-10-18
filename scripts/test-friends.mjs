@@ -23,6 +23,7 @@ let publicRequests = 0;
 let personalEmpty = false;
 let personalFailure = false;
 let wrongUser = false;
+let anomalousProgress = false;
 const personalRequests = [];
 let reactions = [
   { value: 0, users: [{ id: 88, username: "friend", nickname: "我的好友" }] },
@@ -49,7 +50,7 @@ await page.route("**/public-timeline/**", (route) => {
     `<li id="tml_${id}"><span class="info_full">${description}${withSubject ? '<div class="card"><p class="title"><a href="https://bgm.tv/subject/9999">接口缺失作品</a></p></div>' : ""}<div class="post_actions date"><span title="2026-10-17 09:39">刚刚</span></div></span></li>`;
   return route.fulfill({
     contentType: "text/html",
-    body: `<h1><a href="/user/${username}">测试账号</a></h1><div id="timeline"><ul>${empty || personalEmpty || username === "friend" ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "")}</ul></div>`,
+    body: `<h1><a href="/user/${username}">测试账号</a></h1><div id="timeline"><ul>${empty || personalEmpty || username === "friend" ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "") + (anomalousProgress ? row(503, '完成了 <a class="l" href="https://bgm.tv/subject/9999">接口缺失作品</a> 12 of 8 话', true) : "")}</ul></div>`,
   });
 });
 await page.route("https://api.bgm.tv/**", (route) => {
@@ -176,6 +177,25 @@ await page.route("**/friends-api/**", (route) => {
           ]
         : [
             own,
+            ...(anomalousProgress
+              ? [
+                  {
+                    ...base,
+                    id: 100,
+                    cat: 4,
+                    type: 0,
+                    memo: {
+                      progress: {
+                        batch: {
+                          subject: { ...s, type: 6, nameCN: "异常章节进度" },
+                          epsUpdate: 12,
+                          epsTotal: "8",
+                        },
+                      },
+                    },
+                  },
+                ]
+              : []),
             ...Array.from({ length: 14 }, (_, i) => ({
               ...base,
               id: 40 - i,
@@ -379,6 +399,41 @@ try {
   await page.getByRole("button", { name: "刷新", exact: true }).click();
   await page.getByText("好友的评价", { exact: true }).waitFor();
   await page.getByText("我自己的动态", { exact: true }).waitFor();
+  anomalousProgress = true;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  const invalidWarning = "原站进度计数异常，暂无法确认已看数量。";
+  await page.getByText(invalidWarning, { exact: true }).first().waitFor();
+  assert.equal(
+    await page.getByText(invalidWarning, { exact: true }).count(),
+    2,
+    "Both original HTML and API progress must be checked",
+  );
+  assert.doesNotMatch(await page.locator("main").innerText(), /12 of 8/);
+  await page
+    .locator(".friend-card")
+    .filter({ hasText: "异常章节进度" })
+    .getByRole("button", { name: "异常章节进度" })
+    .waitFor();
+  await page.getByText("25 of 25 话", { exact: true }).waitFor();
+  await page
+    .locator(".friend-card")
+    .filter({ hasText: "接口缺失作品" })
+    .getByRole("button", { name: "查看我的时间线", exact: true })
+    .click();
+  const invalidTimeline = page.getByRole("dialog", {
+    name: "我的时间线",
+    exact: true,
+  });
+  await invalidTimeline.getByText(invalidWarning, { exact: true }).waitFor();
+  assert.doesNotMatch(await invalidTimeline.innerText(), /12 of 8|8 of 8/);
+  await page.screenshot({ path: "artifacts/mobile-invalid-timeline.png" });
+  await invalidTimeline
+    .getByRole("button", { name: "返回动态", exact: true })
+    .click();
+  await invalidTimeline.waitFor({ state: "detached" });
+  anomalousProgress = false;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByText("好友的评价", { exact: true }).waitFor();
   const card = page.locator(".friend-card").filter({ hasText: "好友的评价" });
   await card.getByText("1 人互动", { exact: true }).waitFor();
   await card.getByRole("button", { name: "表情 0，1 人", exact: true }).click();

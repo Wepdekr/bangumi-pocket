@@ -18,6 +18,7 @@ import {
   collectionAction,
   batchProgressText,
   progressAction,
+  hasInvalidTimelineProgress,
 } from "./timeline-text";
 export default function FriendsView({
   account,
@@ -287,6 +288,7 @@ function FriendCard({
       } as Record<number, string>
     )[event.cat] || "有了新的动态";
   const progress = event.memo.progress;
+  const invalidProgress = hasInvalidTimelineProgress(event);
   const author = event.uid === currentUser.id ? currentUser : event.user;
   const username = author?.username || String(event.uid);
   const subject = (item: TimelineSubject) => (
@@ -328,7 +330,14 @@ function FriendCard({
           </small>
         </div>
       </header>
-      <p className="friend-action">{event.webSummary ?? label}</p>
+      <p className="friend-action">
+        {invalidProgress ? "更新了章节进度" : (event.webSummary ?? label)}
+      </p>
+      {invalidProgress && (
+        <p className="community-content">
+          原站进度计数异常，暂无法确认已看数量。
+        </p>
+      )}
       {event.memo.subject?.map((item) => (
         <div key={item.subject.id}>
           {subject(item.subject)}
@@ -361,9 +370,11 @@ function FriendCard({
       {progress?.batch && (
         <>
           {subject(progress.batch.subject)}
-          <p className="community-content">
-            {batchProgressText(progress.batch)}
-          </p>
+          {!invalidProgress && (
+            <p className="community-content">
+              {batchProgressText(progress.batch)}
+            </p>
+          )}
         </>
       )}
       {event.memo.status?.tsukkomi && (

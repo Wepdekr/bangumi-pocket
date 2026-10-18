@@ -36,7 +36,7 @@ if (!process.exitCode) {
           }));
           build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
             contents:
-              "export const Capacitor = {isNativePlatform:()=>true}; export const CapacitorHttp = {request:async options => {globalThis.progressNativeRequests.push(options);return {status:globalThis.progressNativeStatus,data:{}};}};",
+              "export const Capacitor = {isNativePlatform:()=>true}; export const CapacitorHttp = {request:async options => {globalThis.progressNativeRequests.push(options);return {status:globalThis.progressNativeStatus,data:globalThis.progressNativeData??{status:'ok'}};}};",
           }));
         },
       },
@@ -50,19 +50,27 @@ if (!process.exitCode) {
   try {
     await accountApi.setEpisodeProgress("native-test-token", 102, {
       batch: true,
+      episodeIds: [101, 102],
     });
     await accountApi.setEpisodeProgress("native-test-token", 101, { type: 0 });
     const [batch, single] = globalThis.progressNativeRequests;
-    assert.equal(batch.url, "https://next.bgm.tv/p1/collections/episodes/102");
-    assert.equal(batch.method, "PATCH");
-    assert.deepEqual(batch.data, { batch: true });
+    assert.equal(batch.url, "https://api.bgm.tv/ep/102/status/watched");
+    assert.equal(batch.method, "POST");
+    assert.equal(batch.data, "ep_id=101%2C102");
+    assert.equal(
+      batch.headers["Content-Type"],
+      "application/x-www-form-urlencoded",
+    );
     assert.equal(batch.headers.Authorization, "Bearer native-test-token");
     assert.equal(batch.disableRedirects, true);
     assert.equal(single.url, "https://next.bgm.tv/p1/collections/episodes/101");
     assert.deepEqual(single.data, { type: 0 });
     globalThis.progressNativeStatus = 429;
     await assert.rejects(
-      accountApi.setEpisodeProgress("native-test-token", 102, { batch: true }),
+      accountApi.setEpisodeProgress("native-test-token", 102, {
+        batch: true,
+        episodeIds: [101, 102],
+      }),
       (error) => error instanceof AccountError && error.status === 429,
     );
     assert.equal(
@@ -70,11 +78,26 @@ if (!process.exitCode) {
       3,
       "No v0 fallback after a web write fails",
     );
+    globalThis.progressNativeStatus = 200;
+    globalThis.progressNativeData = { code: 401, error: "Unauthorized" };
+    await assert.rejects(
+      accountApi.setEpisodeProgress("native-test-token", 102, {
+        batch: true,
+        episodeIds: [101, 102],
+      }),
+      (error) => error instanceof AccountError && error.status === 401,
+    );
+    globalThis.progressNativeData = JSON.stringify({ status: "ok" });
+    await accountApi.setEpisodeProgress("native-test-token", 102, {
+      batch: true,
+      episodeIds: [101, 102],
+    });
     console.log(
-      "PASS: Android progress transport uses the official web endpoint, batch/single payloads and redirect restrictions.",
+      "PASS: Android batch submits exact IDs as a form, single updates retain their endpoint, legacy HTTP-200 errors are rejected, redirects remain disabled.",
     );
   } finally {
     delete globalThis.progressNativeRequests;
     delete globalThis.progressNativeStatus;
+    delete globalThis.progressNativeData;
   }
 }

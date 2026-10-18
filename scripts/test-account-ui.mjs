@@ -34,6 +34,25 @@ const watched = new Set([1001]);
 const writes = [];
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
+await page.route("**/legacy-account-api/ep/*/status/watched", async (route) => {
+  const request = route.request();
+  assert.equal(request.method(), "POST");
+  assert.equal(request.headers().authorization, "Bearer test-ui-account");
+  if (offline) return route.abort();
+  if (expired)
+    return route.fulfill({ json: { code: 401, error: "Unauthorized" } });
+  const ids = new URLSearchParams(request.postData())
+    .get("ep_id")
+    .split(",")
+    .map(Number);
+  assert.ok(
+    ids.every((id) => [1001, 1002].includes(id)),
+    "Do not let the server select hidden chapters",
+  );
+  for (const id of ids) watched.add(id);
+  writes.push({ kind: "legacy-progress", ids });
+  return route.fulfill({ json: { status: "ok" } });
+});
 await page.route("**/account-api/collections/episodes/*", async (route) => {
   const request = route.request();
   assert.equal(request.headers().authorization, "Bearer test-ui-account");
@@ -213,11 +232,10 @@ try {
     .getByRole("button", { name: "取消标记第2话", exact: true })
     .waitFor();
   assert.deepEqual(
-    writes.find((w) => w.kind === "web-progress"),
+    writes.find((w) => w.kind === "legacy-progress"),
     {
-      kind: "web-progress",
-      id: 1002,
-      body: { batch: true },
+      kind: "legacy-progress",
+      ids: [1001, 1002],
     },
   );
   assert.equal(
@@ -231,6 +249,26 @@ try {
     "Skipping a review must preserve the previous rating",
   );
   assert.equal(cloud.comment, "原有短评");
+  // Same scenario as the original site: chapters already complete, set back to
+  // Doing, then explicitly mark through the final episode and confirm completion.
+  await page
+    .getByRole("dialog", { name: "作品详情", exact: true })
+    .getByRole("button", { name: "在看", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector(".collection-options .chips .active")
+        ?.textContent === "在看",
+  );
+  await page.getByRole("button", { name: "看到第2话", exact: true }).click();
+  await review.waitFor();
+  assert.equal(await review.getByLabel("短评").inputValue(), "原有短评");
+  await review
+    .getByRole("button", { name: "暂不评价，标记看过", exact: true })
+    .click();
+  await review.waitFor({ state: "detached" });
+  assert.equal(cloud.type, 2);
+  assert.equal(writes.filter((w) => w.kind === "legacy-progress").length, 2);
   await page
     .getByRole("dialog", { name: "作品详情", exact: true })
     .getByRole("button", { name: "看过", exact: true })
@@ -260,7 +298,7 @@ try {
     .getByRole("button", { name: "保存并标记看过", exact: true })
     .click();
   await review.waitFor({ state: "detached" });
-  assert.deepEqual(writes.find((w) => "rate" in w.body).body, {
+  assert.deepEqual(writes.find((w) => w.body && "rate" in w.body).body, {
     type: 2,
     rate: 8,
     comment: "新的短评",

@@ -15,6 +15,8 @@ export type FriendEvent = {
   batch?: boolean;
   // Already-decoded text from the original public timeline; render as plain text.
   webSummary?: string;
+  // The original site's historical count can include non-main or obsolete IDs.
+  invalidProgress?: boolean;
   reactions?: TimelineReaction[];
   user?: User;
   memo: {
@@ -121,7 +123,7 @@ async function friendsRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.12.0 (Android; personal unofficial client)",
+            "BangumiPocket/0.12.1 (Android; personal unofficial client)",
         },
         disableRedirects: true,
         connectTimeout: 12000,

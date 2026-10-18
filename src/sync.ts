@@ -285,7 +285,9 @@ export class SyncController {
         await this.deps.api.setEpisodeProgress(
           token,
           operation.episodeId,
-          "batch" in operation ? { batch: true } : { type: operation.type },
+          "batch" in operation
+            ? { batch: true, episodeIds: operation.episodeIds }
+            : { type: operation.type },
         );
         await this.acknowledge(id, "progress");
       }

@@ -129,6 +129,56 @@ try {
   assert.deepEqual(result.empty, []);
   assert.deepEqual(result.invalidLink[0].memo.subject, []);
 
+  const invalidProgress = await page.evaluate(() => {
+    const user = { id: 123, username: "tester", nickname: "测试账号" };
+    const html = (count, total, link = true) =>
+      `<h1><a href="/user/tester">测试账号</a></h1><div id="timeline"><ul><li id="tml_999"><span class="info_full">完成了 ${link ? '<a href="https://bgm.tv/subject/9999" class="l">测试作品</a>' : "测试作品"} ${count} of ${total} 话<div class="card"><p class="title"><a href="https://bgm.tv/subject/9999">测试作品</a></p></div><div class="post_actions date"><span title="2026-10-18 17:56">刚刚</span></div></span></li></ul></div>`;
+    const parse = (...args) =>
+      PublicTimelineTest.parsePublicTimeline(html(...args), user)[0];
+    const bad = parse(12, 8);
+    const api = {
+      ...bad,
+      invalidProgress: false,
+      webSummary: undefined,
+      cat: 4,
+      memo: {
+        progress: {
+          batch: {
+            subject: { id: 9999, name: "测试作品", type: 2 },
+            epsUpdate: 8,
+            epsTotal: "8",
+          },
+        },
+      },
+    };
+    return {
+      bad,
+      valid: parse(8, 8),
+      unknown: parse(12, "??"),
+      literal: parse(12, 8, false),
+      merged: PublicTimelineTest.mergePublicTimeline(
+        [api],
+        [bad],
+        user.id,
+        0,
+      )[0],
+    };
+  });
+  assert.equal(invalidProgress.bad.invalidProgress, true);
+  assert.equal(invalidProgress.bad.webSummary, "完成了 测试作品 12 of 8 话");
+  assert.equal(invalidProgress.valid.invalidProgress, false);
+  assert.equal(invalidProgress.unknown.invalidProgress, false);
+  assert.equal(
+    invalidProgress.literal.invalidProgress,
+    false,
+    "Do not reinterpret free-form status text as a progress record",
+  );
+  assert.equal(
+    invalidProgress.merged.invalidProgress,
+    true,
+    "Public merge must preserve anomaly information",
+  );
+
   const merge = await page.evaluate(() => {
     const user = { id: 123, username: "tester" };
     const original = PublicTimelineTest.parsePublicTimeline(

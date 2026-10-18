@@ -28,7 +28,38 @@ function total(value?: string): string | undefined {
     : undefined;
 }
 
+export function invalidProgressCount(
+  count: number | undefined,
+  maximum?: string,
+): boolean {
+  if (count === undefined) return false;
+  const limit = total(maximum);
+  return (
+    !Number.isSafeInteger(count) ||
+    count < 0 ||
+    (limit !== undefined && count > Number(limit))
+  );
+}
+
+export function hasInvalidTimelineProgress(event: FriendEvent): boolean {
+  return Boolean(
+    event.invalidProgress || invalidBatch(event.memo.progress?.batch),
+  );
+}
+
+function invalidBatch(
+  batch: NonNullable<FriendEvent["memo"]["progress"]>["batch"],
+): boolean {
+  return Boolean(
+    batch &&
+    (invalidProgressCount(batch.epsUpdate, batch.epsTotal) ||
+      (batch.subject.type === 1 &&
+        invalidProgressCount(batch.volsUpdate, batch.volsTotal))),
+  );
+}
+
 export function progressAction(event: FriendEvent): string {
+  if (hasInvalidTimelineProgress(event)) return "更新了章节进度";
   const progress = event.memo.progress;
   if (progress?.batch)
     return progress.batch.subject.type === 1 ? "读过" : "完成了";
@@ -45,6 +76,7 @@ export function batchProgressText(
   batch: NonNullable<FriendEvent["memo"]["progress"]>["batch"],
 ): string {
   if (!batch) return "更新了作品进度";
+  if (invalidBatch(batch)) return "原站进度计数异常，暂无法确认已看数量。";
   if (batch.subject.type !== 1 && batch.epsUpdate !== undefined) {
     const count = total(batch.epsTotal);
     return count

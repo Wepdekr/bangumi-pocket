@@ -33,6 +33,7 @@ export async function planWatchedThrough(
     .filter((e) => e.type === 0 && e.sort <= target.sort)
     .map((e) => e.id);
   return {
+    chapters,
     watched: [...new Set([...watched, ...episodeIds])],
     through: { episodeId: target.id, episodeIds },
   };

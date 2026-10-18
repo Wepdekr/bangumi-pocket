@@ -62,6 +62,11 @@ const updateProxy: Record<string, ProxyOptions> = {
   },
 };
 const accountProxy: Record<string, ProxyOptions> = {
+  "/legacy-account-api": {
+    ...friendsProxy["/friends-api"],
+    target: "https://api.bgm.tv",
+    rewrite: (path) => path.replace(/^\/legacy-account-api/, ""),
+  },
   "/account-api": {
     ...friendsProxy["/friends-api"],
     rewrite: (path) => path.replace(/^\/account-api/, "/p1"),

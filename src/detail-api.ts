@@ -7,7 +7,7 @@ async function publicDetail(path: string): Promise<unknown> {
       url: `https://next.bgm.tv/p1${path}`,
       headers: {
         "User-Agent":
-          "BangumiPocket/0.12.0 (Android; personal unofficial client)",
+          "BangumiPocket/0.12.1 (Android; personal unofficial client)",
       },
       connectTimeout: 12000,
       readTimeout: 18000,

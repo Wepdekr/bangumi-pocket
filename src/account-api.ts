@@ -45,7 +45,7 @@ export async function accountRequest<T>(
   path: string,
   method = "GET",
   body?: unknown,
-  service: "public" | "web" = "public",
+  service: "public" | "web" | "legacy" = "public",
 ): Promise<T> {
   // Account requests never enter the public cache or put tokens into URLs.
   const url =
@@ -53,20 +53,55 @@ export async function accountRequest<T>(
       ? Capacitor.isNativePlatform()
         ? "https://next.bgm.tv/p1" + path
         : "/account-api" + path
-      : "https://api.bgm.tv" + path;
+      : service === "legacy" && !Capacitor.isNativePlatform()
+        ? "/legacy-account-api" + path
+        : "https://api.bgm.tv" + path;
   const operation =
     path === "/v0/me"
       ? "验证账号"
       : /\/episodes\?/.test(path)
         ? "读取章节进度"
         : path.endsWith("/episodes") ||
-            path.startsWith("/collections/episodes/")
+            path.startsWith("/collections/episodes/") ||
+            /^\/ep\/\d+\/status\//.test(path)
           ? "更新章节进度"
           : method !== "GET"
             ? "更新收藏"
             : "读取账号收藏";
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (body !== undefined)
+    headers["Content-Type"] =
+      service === "legacy"
+        ? "application/x-www-form-urlencoded"
+        : "application/json";
+  const payload =
+    service === "legacy"
+      ? new URLSearchParams(body as Record<string, string>).toString()
+      : body;
+  const checked = (data: unknown): T => {
+    // Legacy endpoints report authorization/write failures inside HTTP 200 JSON.
+    if (service === "legacy") {
+      if (!data || typeof data !== "object" || Array.isArray(data))
+        throw new AccountError(500, operation);
+      const result = data as {
+        code?: number;
+        error?: unknown;
+        status?: string;
+      };
+      if (
+        (typeof result.code === "number" && result.code >= 400) ||
+        result.error ||
+        result.status === "error"
+      )
+        throw new AccountError(
+          typeof result.code === "number" && result.code >= 400
+            ? result.code
+            : 500,
+          operation,
+        );
+    }
+    return data as T;
+  };
   try {
     if (Capacitor.isNativePlatform()) {
       const response = await CapacitorHttp.request({
@@ -75,47 +110,76 @@ export async function accountRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.12.0 (Android; personal unofficial client)",
+            "BangumiPocket/0.12.1 (Android; personal unofficial client)",
         },
-        data: body,
+        data: payload,
         connectTimeout: 12000,
         readTimeout: 18000,
         disableRedirects: true,
       });
       if (response.status < 200 || response.status >= 300)
         throw new AccountError(response.status, operation);
-      return response.status === 204 ? (undefined as T) : response.data;
+      return checked(
+        response.status === 204
+          ? undefined
+          : service === "legacy" && typeof response.data === "string"
+            ? JSON.parse(response.data)
+            : response.data,
+      );
     }
     const response = await fetch(url, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body:
+        payload !== undefined
+          ? service === "legacy"
+            ? String(payload)
+            : JSON.stringify(payload)
+          : undefined,
       signal: AbortSignal.timeout(18000),
       cache: "no-store",
       credentials: "omit",
       redirect: "error",
     });
     if (!response.ok) throw new AccountError(response.status, operation);
-    return response.status === 204 ? (undefined as T) : await response.json();
+    return checked(response.status === 204 ? undefined : await response.json());
   } catch (error) {
     if (error instanceof AccountError) throw error;
     throw new AccountError(0);
   }
 }
 export const accountApi = {
-  // Same route and batch semantics as the official website's chapter controls.
+  // The original site's WatchedTill submits exact visible chapter IDs. The next
+  // site's batch=true instead queries by sort and can include hidden chapters.
   setEpisodeProgress: (
     token: string,
     episodeId: number,
-    progress: { batch: true } | { type: 0 | 2 },
-  ) =>
-    accountRequest<void>(
+    progress: { batch: true; episodeIds: number[] } | { type: 0 | 2 },
+  ) => {
+    if ("batch" in progress) {
+      const ids = [...new Set(progress.episodeIds)];
+      if (
+        !ids.length ||
+        !ids.includes(episodeId) ||
+        ids.some((id) => !Number.isSafeInteger(id) || id <= 0)
+      )
+        throw new Error("批量章节资料异常，请重新加载后重试。");
+      return accountRequest<void>(
+        token,
+        `/ep/${episodeId}/status/watched`,
+        "POST",
+        { ep_id: ids.join(",") },
+        "legacy",
+      );
+    }
+    return accountRequest<void>(
       token,
       `/collections/episodes/${episodeId}`,
       "PATCH",
       progress,
       "web",
-    ),
+    );
+  },
   me: (token: string) => accountRequest<User>(token, "/v0/me"),
   collections: (token: string, username: string, offset = 0) =>
     accountRequest<{ data: RemoteCollection[]; total: number }>(

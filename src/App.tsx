@@ -1131,6 +1131,7 @@ function Detail({
     status: Saved["status"] | null,
     watched?: number[],
     through?: WatchThrough,
+    completeChapters?: Episode[],
   ) {
     if (!s) return;
     setCollectionOpen(false);
@@ -1148,6 +1149,7 @@ function Detail({
     try {
       const stored = await save(s, status, watched, undefined, through);
       const total = episodes.data?.total ?? 0;
+      const completeList = completeChapters ?? ep;
       // Count only a complete normal-episode list, never one page or a partial season.
       if (
         stored &&
@@ -1155,8 +1157,10 @@ function Detail({
         total > 0 &&
         watched.length >= total &&
         total >= (s.eps || 0) &&
-        ep.every((e) => watched.includes(e.id)) &&
-        ep.some((e) => !saved?.watched.includes(e.id))
+        completeList.length === total &&
+        completeList.every((e) => watched.includes(e.id)) &&
+        (completeList.some((e) => !saved?.watched.includes(e.id)) ||
+          (through && status !== "done"))
       ) {
         setReviewTargetStatus("done");
         setReviewCompleting(true);
@@ -1194,6 +1198,7 @@ function Detail({
         !saved || saved.status === "wish" ? "doing" : saved.status,
         plan.watched,
         [2, 6].includes(s.type ?? 0) ? plan.through : undefined,
+        plan.chapters,
       );
     } catch (error) {
       setThroughError(

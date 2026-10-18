@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import type { FriendEvent, TimelineSubject } from "./friends-api";
 import type { User } from "./types";
+import { invalidProgressCount } from "./timeline-text";
 
 const text = (element: Element | null) =>
   element?.textContent?.replace(/\s+/g, " ").trim() || "";
@@ -57,6 +58,15 @@ export function parsePublicTimeline(html: string, user: User): FriendEvent[] {
       .forEach((node) => node.remove());
     const description = text(summary);
     if (!description) continue;
+    const progress = /\s(\d+) of (\d+) 话$/.exec(description);
+    const invalidProgress = Boolean(
+      /^完成了\s/.test(description) &&
+      progress &&
+      [...summary.querySelectorAll("a[href]")].some((link) =>
+        subjectId(link.getAttribute("href")),
+      ) &&
+      invalidProgressCount(Number(progress[1]), progress[2]),
+    );
     const subjects = new Map<
       number,
       NonNullable<FriendEvent["memo"]["subject"]>[number]
@@ -98,6 +108,7 @@ export function parsePublicTimeline(html: string, user: User): FriendEvent[] {
       createdAt,
       replies: 0,
       webSummary: description,
+      invalidProgress,
       memo: { subject: [...subjects.values()] },
     });
   }
@@ -138,6 +149,7 @@ export function mergePublicTimeline(
         {
           ...event,
           webSummary: current.webSummary,
+          invalidProgress: current.invalidProgress,
           batch: event.batch || subjects.length > 1,
           memo: { subject: subjects },
         },
@@ -160,7 +172,7 @@ export async function readPublicTimeline(user: User): Promise<FriendEvent[]> {
       method: "GET",
       headers: {
         "User-Agent":
-          "BangumiPocket/0.12.0 (Android; personal unofficial client)",
+          "BangumiPocket/0.12.1 (Android; personal unofficial client)",
         Cookie: "",
       },
       responseType: "text",

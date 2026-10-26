@@ -1,6 +1,10 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import type { Subject, User } from "./types";
-import { readPublicTimeline, mergePublicTimeline } from "./public-timeline";
+import {
+  readPublicTimeline,
+  mergePublicTimeline,
+  localizePublicTimeline,
+} from "./public-timeline";
 export type TimelineSubject = Pick<
   Subject,
   "id" | "name" | "type" | "images"
@@ -29,7 +33,7 @@ export type FriendEvent = {
     progress?: {
       single?: {
         subject: TimelineSubject;
-        episode: { sort: number; name?: string; nameCN?: string };
+        episode: { id?: number; sort: number; name?: string; nameCN?: string };
       };
       batch?: {
         subject: TimelineSubject;
@@ -123,7 +127,7 @@ async function friendsRequest<T>(
         headers: {
           ...headers,
           "User-Agent":
-            "BangumiPocket/0.12.3 (Android; personal unofficial client)",
+            "BangumiPocket/0.12.4 (Android; personal unofficial client)",
         },
         disableRedirects: true,
         connectTimeout: 12000,
@@ -211,7 +215,7 @@ export async function readUserTimeline(
     }
   }
   return {
-    events,
+    events: await localizePublicTimeline(events),
     warning,
     cursor: rows.length ? Math.min(...rows.map((row) => row.id)) : undefined,
     hasMore: rows.length > 0,
@@ -259,7 +263,7 @@ export async function readFriendsTimeline(
     }
   }
   return {
-    events,
+    events: await localizePublicTimeline(events),
     warning,
     cursor: rows.length ? Math.min(...rows.map((row) => row.id)) : undefined,
     hasMore: rows.length > 0,

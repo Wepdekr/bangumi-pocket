@@ -2,6 +2,9 @@ import { Capacitor, CapacitorHttp } from "@capacitor/core";
 import type { FriendEvent, TimelineSubject } from "./friends-api";
 import type { User } from "./types";
 import { invalidProgressCount } from "./timeline-text";
+import { displayText } from "./text";
+
+const USER_AGENT = "BangumiPocket/0.12.4 (Android; personal unofficial client)";
 
 const text = (element: Element | null) =>
   element?.textContent?.replace(/\s+/g, " ").trim() || "";
@@ -36,6 +39,8 @@ function singleEpisode(summary: Element, subject?: TimelineSubject) {
     !/^\/(?:subject\/)?ep\/\d+$/.test(url.pathname)
   )
     return;
+  const episodeId = Number(url.pathname.split("/").pop());
+  if (!Number.isSafeInteger(episodeId) || episodeId <= 0) return;
   const action = summary.cloneNode(true) as Element;
   action.querySelectorAll("a").forEach((node) => node.remove());
   const type = ({ 想看: 1, 看过: 2, 抛弃: 3 } as Record<string, number>)[
@@ -47,7 +52,11 @@ function singleEpisode(summary: Element, subject?: TimelineSubject) {
     type,
     single: {
       subject,
-      episode: { sort: Number(chapter[1]), name: chapter[2] || "" },
+      episode: {
+        id: episodeId,
+        sort: Number(chapter[1]),
+        name: chapter[2] || "",
+      },
     },
   };
 }
@@ -170,6 +179,20 @@ export function mergePublicTimeline(
         event.cat === 4 &&
         current?.memo.progress?.single
       ) {
+        const single = current.memo.progress.single;
+        const previous = event.memo.progress?.single;
+        const sameEpisode =
+          previous &&
+          previous.subject.id === single.subject.id &&
+          previous.episode.sort === single.episode.sort &&
+          previous.episode.id === single.episode.id;
+        const nameCN =
+          single.episode.nameCN ||
+          (sameEpisode && previous.episode.nameCN
+            ? event.webSummary === undefined
+              ? displayText(previous.episode.nameCN)
+              : previous.episode.nameCN
+            : undefined);
         // Prefer current original-site chapter details over a cached API row.
         // Keep the same event ID, timestamp, reactions and reply metadata.
         return [
@@ -180,7 +203,14 @@ export function mergePublicTimeline(
             batch: false,
             webSummary: current.webSummary,
             invalidProgress: current.invalidProgress,
-            memo: current.memo,
+            memo: {
+              progress: {
+                single: {
+                  ...single,
+                  episode: { ...single.episode, ...(nameCN ? { nameCN } : {}) },
+                },
+              },
+            },
           },
         ] as const;
       }
@@ -217,6 +247,88 @@ export function mergePublicTimeline(
   return [...merged.values()].sort((a, b) => b.id - a.id);
 }
 
+// The original site's episode links contain only the original title. Look up
+// translations by the exact episode ID, without touching collection progress.
+export async function localizePublicTimeline(
+  events: FriendEvent[],
+): Promise<FriendEvent[]> {
+  const requests = new Map<number, Promise<unknown>>();
+  const lookup = (id: number) => {
+    let pending = requests.get(id);
+    if (!pending) {
+      pending = (async () => {
+        const url = `https://api.bgm.tv/v0/episodes/${id}`;
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.request({
+            url,
+            method: "GET",
+            headers: { "User-Agent": USER_AGENT, Cookie: "" },
+            responseType: "json",
+            disableRedirects: true,
+            connectTimeout: 4000,
+            readTimeout: 4000,
+          });
+          if (response.status !== 200) return;
+          return response.data;
+        }
+        const response = await fetch(url, {
+          credentials: "omit",
+          redirect: "error",
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!response.ok) return;
+        return response.json();
+      })().catch(() => undefined);
+      requests.set(id, pending);
+    }
+    return pending;
+  };
+  return Promise.all(
+    events.map(async (event) => {
+      const single = event.memo.progress?.single;
+      const id = single?.episode.id;
+      if (
+        event.webSummary === undefined ||
+        !single ||
+        single.episode.nameCN ||
+        !id ||
+        !Number.isSafeInteger(id) ||
+        id <= 0
+      )
+        return event;
+      const data = (await lookup(id)) as
+        | {
+            id?: number;
+            subject_id?: number;
+            sort?: number;
+            name_cn?: string;
+          }
+        | undefined;
+      if (
+        !data ||
+        data.id !== id ||
+        data.subject_id !== single.subject.id ||
+        data.sort !== single.episode.sort ||
+        typeof data.name_cn !== "string" ||
+        !data.name_cn.trim()
+      )
+        return event;
+      return {
+        ...event,
+        memo: {
+          progress: {
+            single: {
+              ...single,
+              // webSummary rows already contain decoded text; keep that convention.
+              episode: { ...single.episode, nameCN: displayText(data.name_cn) },
+            },
+          },
+        },
+      };
+    }),
+  );
+}
+
 export async function readPublicTimeline(user: User): Promise<FriendEvent[]> {
   const path = `/user/${encodeURIComponent(user.username)}/timeline`;
   let html: string;
@@ -225,8 +337,7 @@ export async function readPublicTimeline(user: User): Promise<FriendEvent[]> {
       url: "https://bgm.tv" + path,
       method: "GET",
       headers: {
-        "User-Agent":
-          "BangumiPocket/0.12.3 (Android; personal unofficial client)",
+        "User-Agent": USER_AGENT,
         Cookie: "",
       },
       responseType: "text",

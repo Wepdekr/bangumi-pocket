@@ -27,7 +27,7 @@ await build({
         }));
         build.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
           contents:
-            "export const Capacitor={isNativePlatform:()=>true}; export const CapacitorHttp={request:async options=>{window.nativeTimelineCalls.push(options);return {status:window.nativeTimelineStatus,data:window.nativeTimelineHtml};}};",
+            "export const Capacitor={isNativePlatform:()=>true}; export const CapacitorHttp={request:async options=>{window.nativeTimelineCalls.push(options);return {status:window.nativeTimelineStatus,data:options.url.includes('/v0/episodes/')?window.nativeEpisodeData:window.nativeTimelineHtml};}};",
         }));
       },
     },
@@ -175,6 +175,7 @@ try {
   assert.equal(singles.watched.cat, 4);
   assert.equal(singles.watched.type, 2);
   assert.deepEqual(singles.watched.memo.progress.single.episode, {
+    id: 1234,
     sort: 4,
     name: "第一段／第二段 &amp; 第三段",
   });
@@ -198,6 +199,152 @@ try {
   assert.equal(singles.merged.createdAt, 42);
   assert.equal(singles.merged.replies, 3);
   assert.equal(singles.merged.reactions[0].users[0].id, 88);
+
+  const translations = await page.evaluate(async (source) => {
+    const userId = source.uid;
+    const single = source.memo.progress.single;
+    const api = {
+      ...source,
+      webSummary: undefined,
+      memo: {
+        progress: {
+          single: {
+            ...single,
+            episode: {
+              ...single.episode,
+              nameCN: "中文 &amp;amp; 标题",
+            },
+          },
+        },
+      },
+    };
+    const merge = (previous) =>
+      PublicTimelineTest.mergePublicTimeline(
+        [previous],
+        [source],
+        userId,
+        0,
+      )[0];
+    const kept = merge(api);
+    const wrongId = merge({
+      ...api,
+      memo: {
+        progress: {
+          single: {
+            ...api.memo.progress.single,
+            episode: { ...api.memo.progress.single.episode, id: 5678 },
+          },
+        },
+      },
+    });
+    const changed = merge({
+      ...api,
+      memo: {
+        progress: {
+          single: {
+            ...api.memo.progress.single,
+            episode: { ...api.memo.progress.single.episode, sort: 2 },
+          },
+        },
+      },
+    });
+    const originalFetch = window.fetch;
+    const calls = [];
+    let payload = {
+      id: 1234,
+      subject_id: 9999,
+      sort: 4,
+      name_cn: "中文 &amp;amp; 标题",
+    };
+    let failure = false;
+    let status = 200;
+    window.fetch = async (url, options) => {
+      calls.push({
+        url,
+        credentials: options.credentials,
+        redirect: options.redirect,
+        headers: options.headers,
+      });
+      if (failure) throw new Error("offline");
+      return { ok: status === 200, json: async () => payload };
+    };
+    const localize = () => PublicTimelineTest.localizePublicTimeline([source]);
+    try {
+      const before = JSON.stringify(source);
+      const localized = await PublicTimelineTest.localizePublicTimeline([
+        source,
+        { ...source, id: 124 },
+        kept,
+      ]);
+      const callCount = calls.length;
+      payload = { ...payload, name_cn: "" };
+      const noTranslation = await localize();
+      payload = { ...payload, name_cn: "错误标题", subject_id: 1 };
+      const wrongSubject = await localize();
+      payload = { ...payload, subject_id: 9999, id: 999 };
+      const wrongEpisode = await localize();
+      payload = { ...payload, id: 1234, sort: 2 };
+      const wrongSort = await localize();
+      payload = null;
+      const malformed = await localize();
+      status = 404;
+      const notFound = await localize();
+      failure = true;
+      const offline = await localize();
+      return {
+        kept,
+        wrongId,
+        changed,
+        localized,
+        callCount,
+        calls,
+        fallbacks: [
+          noTranslation,
+          wrongSubject,
+          wrongEpisode,
+          wrongSort,
+          malformed,
+          notFound,
+          offline,
+        ],
+        mutated: JSON.stringify(source) !== before,
+      };
+    } finally {
+      window.fetch = originalFetch;
+    }
+  }, singles.watched);
+  assert.equal(
+    translations.kept.memo.progress.single.episode.nameCN,
+    "中文 &amp; 标题",
+  );
+  assert.equal(
+    translations.wrongId.memo.progress.single.episode.nameCN,
+    undefined,
+  );
+  assert.equal(
+    translations.changed.memo.progress.single.episode.nameCN,
+    undefined,
+  );
+  assert.equal(
+    translations.callCount,
+    1,
+    "Deduplicate exact-ID lookups and retain known translations",
+  );
+  assert.equal(translations.mutated, false);
+  assert.equal(
+    translations.localized[0].memo.progress.single.episode.nameCN,
+    "中文 &amp; 标题",
+  );
+  assert.deepEqual(translations.localized[2], translations.kept);
+  for (const fallback of translations.fallbacks)
+    assert.deepEqual(fallback[0], singles.watched);
+  assert.equal(
+    translations.calls[0].url,
+    "https://api.bgm.tv/v0/episodes/1234",
+  );
+  assert.equal(translations.calls[0].credentials, "omit");
+  assert.equal(translations.calls[0].redirect, "error");
+  assert.equal(translations.calls[0].headers, undefined);
 
   const invalidProgress = await page.evaluate(() => {
     const user = { id: 123, username: "tester", nickname: "测试账号" };
@@ -370,6 +517,34 @@ try {
   assert.equal(native.calls[0].responseType, "text");
   assert.equal(native.calls[0].disableRedirects, true);
   assert.equal(native.rejected, true);
+
+  const nativeTranslation = await page.evaluate(async (source) => {
+    window.nativeTimelineStatus = 200;
+    window.nativeTimelineCalls = [];
+    window.nativeEpisodeData = {
+      id: 1234,
+      subject_id: 9999,
+      sort: 4,
+      name_cn: "原生中文 &amp; 标题",
+    };
+    const rows = await NativeTimelineTest.localizePublicTimeline([source]);
+    window.nativeTimelineStatus = 503;
+    const fallback = await NativeTimelineTest.localizePublicTimeline([source]);
+    return { rows, fallback, calls: window.nativeTimelineCalls };
+  }, singles.watched);
+  assert.equal(
+    nativeTranslation.rows[0].memo.progress.single.episode.nameCN,
+    "原生中文 & 标题",
+  );
+  assert.deepEqual(nativeTranslation.fallback[0], singles.watched);
+  assert.equal(
+    nativeTranslation.calls[0].url,
+    "https://api.bgm.tv/v0/episodes/1234",
+  );
+  assert.equal(nativeTranslation.calls[0].method, "GET");
+  assert.equal(nativeTranslation.calls[0].headers.Authorization, undefined);
+  assert.equal(nativeTranslation.calls[0].headers.Cookie, "");
+  assert.equal(nativeTranslation.calls[0].disableRedirects, true);
 
   await page.setContent('<div id="root"></div>');
   await page.addScriptTag({ path: "artifacts/friend-refresh-test.js" });

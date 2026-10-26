@@ -56,6 +56,15 @@ await page.route("**/public-timeline/**", (route) => {
 });
 await page.route("https://api.bgm.tv/**", (route) => {
   const path = new URL(route.request().url()).pathname;
+  if (path === "/v0/episodes/1234")
+    return route.fulfill({
+      json: {
+        id: 1234,
+        subject_id: 9999,
+        sort: 4,
+        name_cn: "中文第一段／第二段 &amp;amp; 第三段",
+      },
+    });
   return route.fulfill({
     json:
       path === "/v0/me"
@@ -314,7 +323,13 @@ await page.route("**/friends-api/**", (route) => {
                 progress: {
                   single: {
                     subject: s,
-                    episode: { sort: 3, nameCN: "第三集 &amp; 回忆" },
+                    episode: singleEpisodeLayout
+                      ? {
+                          id: 1234,
+                          sort: 4,
+                          nameCN: "中文第一段／第二段 &amp;amp; 第三段",
+                        }
+                      : { sort: 3, nameCN: "第三集 &amp; 回忆" },
                   },
                 },
               },
@@ -455,20 +470,27 @@ try {
   await page.getByRole("button", { name: "刷新", exact: true }).click();
   const ownSingle = page
     .locator(".friend-card")
-    .filter({ hasText: "第一段／第二段 &amp; 第三段" });
+    .filter({ hasText: "查看我的时间线" })
+    .filter({ hasText: "中文第一段／第二段 &amp; 第三段" });
   await ownSingle.waitFor();
   assert.equal(await ownSingle.locator(".friend-action").innerText(), "看过");
   assert.equal(
     await ownSingle.locator(".community-content").innerText(),
-    "第 4 集 · 第一段／第二段 &amp; 第三段",
+    "第 4 集 · 中文第一段／第二段 &amp; 第三段",
   );
   assert.equal(await ownSingle.locator(".friend-subject").count(), 1);
   const friendSingle = page
     .locator(".friend-card")
-    .filter({ hasText: "第 3 集 · 第三集 & 回忆" });
+    .filter({ hasText: "查看好友时间线" })
+    .filter({ hasText: "第 4 集 · 中文第一段／第二段 &amp; 第三段" });
   assert.equal(
     await friendSingle.locator(".friend-action").innerText(),
     "看过",
+  );
+  assert.equal(
+    await friendSingle.locator(".community-content").innerText(),
+    await ownSingle.locator(".community-content").innerText(),
+    "Own and friend episodes must use the same Chinese-first title rule",
   );
   assert.equal(await page.getByText("旧章节", { exact: true }).count(), 0);
   await page.getByText("25 of 25 话", { exact: true }).waitFor();
@@ -481,7 +503,7 @@ try {
   });
   const singleCard = personalSingle
     .locator(".friend-card")
-    .filter({ hasText: "第一段／第二段 &amp; 第三段" });
+    .filter({ hasText: "中文第一段／第二段 &amp; 第三段" });
   await singleCard.waitFor();
   assert.equal(await singleCard.locator(".friend-action").innerText(), "看过");
   assert.equal(await singleCard.locator(".friend-subject").count(), 1);

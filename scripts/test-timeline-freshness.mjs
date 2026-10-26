@@ -129,6 +129,76 @@ try {
   assert.deepEqual(result.empty, []);
   assert.deepEqual(result.invalidLink[0].memo.subject, []);
 
+  const singles = await page.evaluate(() => {
+    const user = { id: 123, username: "tester", nickname: "测试账号" };
+    const parse = (action, label, href = "/subject/ep/1234") =>
+      PublicTimelineTest.parsePublicTimeline(
+        `<h1><a href="/user/tester">测试账号</a></h1><div id="timeline"><li id="tml_123"><span class="info_full">${action} <a class="l" href="${href}">${label}</a><div class="card"><p class="title"><a href="/subject/9999">作品 &amp;amp; 名称</a></p></div><div class="post_actions date"><span title="2026-10-26 17:25">刚刚</span></div></span></li></div>`,
+        user,
+      )[0];
+    const watched = parse("看过", "ep.4 第一段／第二段 &amp;amp; 第三段");
+    const old = {
+      ...watched,
+      webSummary: undefined,
+      type: 1,
+      createdAt: 42,
+      replies: 3,
+      reactions: [{ value: 0, users: [{ id: 88, username: "friend" }] }],
+      memo: {
+        progress: {
+          single: {
+            subject: { id: 9999, name: "旧作品" },
+            episode: { sort: 2, name: "旧标题" },
+          },
+        },
+      },
+    };
+    return {
+      watched,
+      wish: parse("想看", "ep.5.5 番外", "https://chii.in/ep/5678"),
+      dropped: parse("抛弃", "ep.0 序章"),
+      noTitle: parse("看过", "ep.8"),
+      untrusted: parse(
+        "看过",
+        "ep.4 标题",
+        "https://untrusted.invalid/ep/1234",
+      ),
+      literal: parse("我看过", "ep.4 标题"),
+      merged: PublicTimelineTest.mergePublicTimeline(
+        [old],
+        [watched],
+        user.id,
+        0,
+      )[0],
+    };
+  });
+  assert.equal(singles.watched.cat, 4);
+  assert.equal(singles.watched.type, 2);
+  assert.deepEqual(singles.watched.memo.progress.single.episode, {
+    sort: 4,
+    name: "第一段／第二段 &amp; 第三段",
+  });
+  assert.equal(
+    singles.watched.memo.progress.single.subject.name,
+    "作品 &amp; 名称",
+  );
+  assert.equal(
+    singles.watched.memo.subject,
+    undefined,
+    "A single episode must render its subject once",
+  );
+  assert.equal(singles.wish.type, 1);
+  assert.equal(singles.wish.memo.progress.single.episode.sort, 5.5);
+  assert.equal(singles.dropped.type, 3);
+  assert.equal(singles.noTitle.memo.progress.single.episode.name, "");
+  assert.equal(singles.untrusted.memo.progress, undefined);
+  assert.equal(singles.literal.memo.progress, undefined);
+  assert.equal(singles.merged.type, 2);
+  assert.deepEqual(singles.merged.memo, singles.watched.memo);
+  assert.equal(singles.merged.createdAt, 42);
+  assert.equal(singles.merged.replies, 3);
+  assert.equal(singles.merged.reactions[0].users[0].id, 88);
+
   const invalidProgress = await page.evaluate(() => {
     const user = { id: 123, username: "tester", nickname: "测试账号" };
     const html = (count, total, link = true) =>

@@ -23,6 +23,35 @@ function safeUrl(href: string) {
   }
 }
 
+function singleEpisode(summary: Element, subject?: TimelineSubject) {
+  if (!subject) return;
+  const links = [...summary.querySelectorAll("a[href]")];
+  if (links.length !== 1) return;
+  const link = links[0];
+  const url = safeUrl(link.getAttribute("href") || "");
+  if (
+    !url ||
+    !["http:", "https:"].includes(url.protocol) ||
+    !["bgm.tv", "bangumi.tv", "chii.in"].includes(url.hostname) ||
+    !/^\/(?:subject\/)?ep\/\d+$/.test(url.pathname)
+  )
+    return;
+  const action = summary.cloneNode(true) as Element;
+  action.querySelectorAll("a").forEach((node) => node.remove());
+  const type = ({ 想看: 1, 看过: 2, 抛弃: 3 } as Record<string, number>)[
+    text(action)
+  ];
+  const chapter = /^ep[.．]\s*(\d+(?:\.\d+)?)(?:\s+(.+))?$/.exec(text(link));
+  if (!type || !chapter || !Number.isFinite(Number(chapter[1]))) return;
+  return {
+    type,
+    single: {
+      subject,
+      episode: { sort: Number(chapter[1]), name: chapter[2] || "" },
+    },
+  };
+}
+
 // Read the public original-site page when the new-site index omits recent rows.
 // Template contents are inert; no scripts, handlers or remote documents execute.
 export function parsePublicTimeline(html: string, user: User): FriendEvent[] {
@@ -99,17 +128,23 @@ export function parsePublicTimeline(html: string, user: User): FriendEvent[] {
         if (rate >= 1 && rate <= 10) item.rate = rate;
       }
     }
+    const chapter =
+      subjects.size === 1
+        ? singleEpisode(summary, [...subjects.values()][0].subject)
+        : undefined;
     events.push({
       id,
       uid: user.id,
       user,
-      cat: 0,
-      type: 0,
+      cat: chapter ? 4 : 0,
+      type: chapter?.type ?? 0,
       createdAt,
       replies: 0,
       webSummary: description,
       invalidProgress,
-      memo: { subject: [...subjects.values()] },
+      memo: chapter
+        ? { progress: { single: chapter.single } }
+        : { subject: [...subjects.values()] },
     });
   }
   if (timeline.querySelector("li[id^='tml_']") && !events.length)
@@ -130,6 +165,25 @@ export function mergePublicTimeline(
   const merged = new Map(
     events.map((event) => {
       const current = originals.get(event.id);
+      if (
+        event.uid === userId &&
+        event.cat === 4 &&
+        current?.memo.progress?.single
+      ) {
+        // Prefer current original-site chapter details over a cached API row.
+        // Keep the same event ID, timestamp, reactions and reply metadata.
+        return [
+          event.id,
+          {
+            ...event,
+            type: current.type,
+            batch: false,
+            webSummary: current.webSummary,
+            invalidProgress: current.invalidProgress,
+            memo: current.memo,
+          },
+        ] as const;
+      }
       if (
         event.uid !== userId ||
         !current?.memo.subject?.length ||
@@ -172,7 +226,7 @@ export async function readPublicTimeline(user: User): Promise<FriendEvent[]> {
       method: "GET",
       headers: {
         "User-Agent":
-          "BangumiPocket/0.12.2 (Android; personal unofficial client)",
+          "BangumiPocket/0.12.3 (Android; personal unofficial client)",
         Cookie: "",
       },
       responseType: "text",

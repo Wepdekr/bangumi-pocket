@@ -331,7 +331,11 @@ function FriendCard({
         </div>
       </header>
       <p className="friend-action">
-        {invalidProgress ? "更新了章节进度" : (event.webSummary ?? label)}
+        {invalidProgress
+          ? "更新了章节进度"
+          : progress?.single
+            ? progressAction(event)
+            : (event.webSummary ?? label)}
       </p>
       {invalidProgress && (
         <p className="community-content">
@@ -360,9 +364,20 @@ function FriendCard({
         <>
           {subject(progress.single.subject)}
           <p className="community-content">
-            第 {progress.single.episode.sort} 集 ·{" "}
-            {displayText(
-              progress.single.episode.nameCN || progress.single.episode.name,
+            第 {progress.single.episode.sort} 集
+            {(progress.single.episode.nameCN ||
+              progress.single.episode.name) && (
+              <>
+                {" "}
+                ·{" "}
+                {event.webSummary !== undefined
+                  ? progress.single.episode.nameCN ||
+                    progress.single.episode.name
+                  : displayText(
+                      progress.single.episode.nameCN ||
+                        progress.single.episode.name,
+                    )}
+              </>
             )}
           </p>
         </>

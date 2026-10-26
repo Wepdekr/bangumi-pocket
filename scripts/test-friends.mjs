@@ -24,6 +24,7 @@ let personalEmpty = false;
 let personalFailure = false;
 let wrongUser = false;
 let anomalousProgress = false;
+let singleEpisodeLayout = false;
 const personalRequests = [];
 let reactions = [
   { value: 0, users: [{ id: 88, username: "friend", nickname: "我的好友" }] },
@@ -50,7 +51,7 @@ await page.route("**/public-timeline/**", (route) => {
     `<li id="tml_${id}"><span class="info_full">${description}${withSubject ? '<div class="card"><p class="title"><a href="https://bgm.tv/subject/9999">接口缺失作品</a></p></div>' : ""}<div class="post_actions date"><span title="2026-10-17 09:39">刚刚</span></div></span></li>`;
   return route.fulfill({
     contentType: "text/html",
-    body: `<h1><a href="/user/${username}">测试账号</a></h1><div id="timeline"><ul>${empty || personalEmpty || username === "friend" ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "") + (anomalousProgress ? row(503, '完成了 <a class="l" href="https://bgm.tv/subject/9999">接口缺失作品</a> 12 of 8 话', true) : "")}</ul></div>`,
+    body: `<h1><a href="/user/${username}">测试账号</a></h1><div id="timeline"><ul>${empty || personalEmpty || username === "friend" ? "" : row(12, "重复的个人动态") + (webExtra ? row(502, "完成了 接口缺失作品 2 of 12 话", true) + row(501, "在看 接口缺失作品", true) : "") + (anomalousProgress ? row(503, '完成了 <a class="l" href="https://bgm.tv/subject/9999">接口缺失作品</a> 12 of 8 话', true) : "") + (singleEpisodeLayout ? row(504, '看过 <a class="l" href="https://bgm.tv/subject/ep/1234">ep.4 第一段／第二段 &amp;amp; 第三段</a>', true) : "")}</ul></div>`,
   });
 });
 await page.route("https://api.bgm.tv/**", (route) => {
@@ -177,6 +178,24 @@ await page.route("**/friends-api/**", (route) => {
           ]
         : [
             own,
+            ...(singleEpisodeLayout
+              ? [
+                  {
+                    ...own,
+                    id: 504,
+                    cat: 4,
+                    type: 2,
+                    memo: {
+                      progress: {
+                        single: {
+                          subject: { ...s, nameCN: "旧作品" },
+                          episode: { sort: 2, name: "旧章节" },
+                        },
+                      },
+                    },
+                  },
+                ]
+              : []),
             ...(anomalousProgress
               ? [
                   {
@@ -432,6 +451,52 @@ try {
     .click();
   await invalidTimeline.waitFor({ state: "detached" });
   anomalousProgress = false;
+  singleEpisodeLayout = true;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  const ownSingle = page
+    .locator(".friend-card")
+    .filter({ hasText: "第一段／第二段 &amp; 第三段" });
+  await ownSingle.waitFor();
+  assert.equal(await ownSingle.locator(".friend-action").innerText(), "看过");
+  assert.equal(
+    await ownSingle.locator(".community-content").innerText(),
+    "第 4 集 · 第一段／第二段 &amp; 第三段",
+  );
+  assert.equal(await ownSingle.locator(".friend-subject").count(), 1);
+  const friendSingle = page
+    .locator(".friend-card")
+    .filter({ hasText: "第 3 集 · 第三集 & 回忆" });
+  assert.equal(
+    await friendSingle.locator(".friend-action").innerText(),
+    "看过",
+  );
+  assert.equal(await page.getByText("旧章节", { exact: true }).count(), 0);
+  await page.getByText("25 of 25 话", { exact: true }).waitFor();
+  await ownSingle
+    .getByRole("button", { name: "查看我的时间线", exact: true })
+    .click();
+  const personalSingle = page.getByRole("dialog", {
+    name: "我的时间线",
+    exact: true,
+  });
+  const singleCard = personalSingle
+    .locator(".friend-card")
+    .filter({ hasText: "第一段／第二段 &amp; 第三段" });
+  await singleCard.waitFor();
+  assert.equal(await singleCard.locator(".friend-action").innerText(), "看过");
+  assert.equal(await singleCard.locator(".friend-subject").count(), 1);
+  await page.screenshot({
+    path: "artifacts/mobile-single-timeline-layout.png",
+  });
+  await singleCard.locator(".friend-subject").click();
+  await page.getByRole("dialog", { name: "作品详情", exact: true }).waitFor();
+  await page.getByRole("button", { name: "返回", exact: true }).click();
+  await singleCard.waitFor();
+  await personalSingle
+    .getByRole("button", { name: "返回动态", exact: true })
+    .click();
+  await personalSingle.waitFor({ state: "detached" });
+  singleEpisodeLayout = false;
   await page.getByRole("button", { name: "刷新", exact: true }).click();
   await page.getByText("好友的评价", { exact: true }).waitFor();
   const card = page.locator(".friend-card").filter({ hasText: "好友的评价" });
